@@ -305,6 +305,10 @@ async function teamExtensionPathsByTeam(
 	cwd: string,
 ): Promise<Record<string, string[]>> {
 	const teamExtensions: Record<string, string[]> = {};
+	const selected = options.extensions.length || Object.values(options.teamSelections).some((paths) => paths.length);
+	if (selected && settings.profile.id !== "pi") {
+		throw new Error("--extension is supported only for Pi workers; use --engine pi");
+	}
 	for (const team of settings.teams) {
 		teamExtensions[team] = await normalizeWorkerExtensions(
 			[...options.extensions, ...(options.teamSelections[team] ?? [])],

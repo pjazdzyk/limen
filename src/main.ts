@@ -98,14 +98,14 @@ usage:
   limen group publish [GROUP-ID] [--team team-N] "finding"  # members inherit verified membership; lead supplies ID
   limen group wait [GROUP-ID] [--timeout D]
   limen group stop|close [GROUP-ID]
-  limen spawn --engine <engine> --provider <provider> --model <model> --thinking <level> "Implement FNNN: <outcome>. Start by writing <slice>. Ticket: spec/features/active/FNNN-slug/ticket.md" [--label L] [--branch B] [--role NAME] [--timeout 20m; default 90m] [--task-file F|-] [--prepare CMD] [--extension PATH ...; Pi only]
+  limen spawn --engine <engine> --provider <provider> --model <model> --thinking <level> "Implement FNNN: <outcome>. Start by writing <slice>. Ticket: spec/features/active/FNNN-slug/ticket.md" [--label L] [--branch B] [--role NAME] [--timeout 20m; default 90m] [--task-file F|-] [--prepare CMD] [--extension PATH ...]
   limen spawn --engine <engine> --provider <provider> --model <model> --thinking <level> "Short title" --task-file F|-  # the file is the task; the positional words become the label
   limen spawn --engine <engine> --provider <provider> --model <model> --thinking <level> "…" [--label L]  # selected engine's flags; detached, also in Herdr (log-tail tab)
   limen spawn --engine <engine> --provider <provider> --model <model> --thinking <level> --tab "…"  # hosted: a person types into the tab (requires Herdr; no --timeout)
   limen spawn --engine <engine> --provider <provider> --model <model> --thinking <level> --detached "…"  # detached, as the default
   limen spawn --engine <engine> --provider <provider> --model <model> --thinking <level> --repo R "Implement FNNN: <outcome>. Ticket: spec/features/active/FNNN-slug/ticket.md" [--label L]
   limen spawn --engine <engine> --provider <provider> --model <model> --thinking <level> --review --detached --branch B --label L [--base SHA] [--head SHA] "Review the FNNN candidate against spec/features/active/FNNN-slug/ticket.md"
-  limen continue <id|suffix|label> "follow-up instruction" [--review] [--label L] [--engine pi|omp] [--provider P] [--model X] [--thinking T] [--tab|--detached] [--extension PATH ...; replaces ordinary Pi list, group list stays fixed]
+  limen continue <id|suffix|label> "follow-up instruction" [--review] [--label L] [--engine pi|omp] [--provider P] [--model X] [--thinking T] [--tab|--detached] [--extension PATH ...; replaces the ordinary list, group list stays fixed]
                                   # resume a finished job in its own engine session — full context, same worktree; Herdr default is hosted
   limen steer <id|suffix|label> | --running "correction"
   limen diff <id|suffix|label>

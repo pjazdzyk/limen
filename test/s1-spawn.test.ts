@@ -51,6 +51,7 @@ test("each spawn refusal exits 1, names its cause and leaves no job, worktree or
 		[["--engine", "pi", "--extension", "missing.ts", "work"], "missing.ts"],
 		[["--engine", "omp", "--extension", "README.md", "work"], "--extension"],
 		[["--provider", "pi-claude", "--model", "anthropic/claude-opus-5-5", "work"], "pi-claude/claude-opus-5-5"],
+		[["--engine", "omp", "--extension", "missing.ts", "work"], "missing.ts"],
 	];
 	for (const [args, cause, env] of refusals) {
 		const run = limen(p, ["spawn", ...args], env ? { env } : {});
@@ -150,4 +151,24 @@ test("a workspace job works in one child repository and loads a selected Pi exte
 		extensionsOf(argv).filter((path) => path.startsWith(p.parent)),
 		[await realpath(extension)],
 	);
+});
+
+test("a workspace OMP job loads a selected extension after the Limen hooks", async () => {
+	const workspace = join(p.parent, "workspace-omp");
+	await repository(join(workspace, "api"));
+	assert.equal(limen(p, ["workspace", "init"], { cwd: workspace }).status, 0);
+	const extension = join(p.parent, "omp-selected.ts");
+	await writeFile(extension, "export default () => {};\n");
+	const id = spawnJob(p, "commit", ["--repo", "api", "--engine", "omp", "--extension", extension], { cwd: workspace });
+	assert.equal(waitJob(p, id, { cwd: workspace }), "done");
+	const dir = join(workspace, ".limen/jobs", id);
+	assert.deepEqual(json(join(dir, "extensions.json")), [await realpath(extension)]);
+	const argv: string[] = json(join(dir, "fake-argv.json"));
+	assert.ok(argv.includes("--no-extensions"));
+	const loaded = extensionsOf(argv);
+	assert.ok(
+		loaded.some((path) => path.endsWith("/hook/communication.ts")),
+		loaded.join(" "),
+	);
+	assert.equal(loaded.at(-1), await realpath(extension));
 });
