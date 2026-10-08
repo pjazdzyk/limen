@@ -3,15 +3,16 @@ import { homedir } from "node:os";
 import { isAbsolute, resolve } from "node:path";
 import type { EngineId } from "./engine.ts";
 
-/** Resolve only local paths. Pi, not Limen, interprets the selected module or package. */
+/**
+ * Resolve only local paths. The engine, not Limen, interprets the selected module or package.
+ * Both engines take repeated `--extension PATH` beside `--no-extensions` (OMP: explicit paths still
+ * load), the same way Limen names its own hooks. Team groups keep their Pi-only rule in `group.ts`.
+ */
 export async function normalizeWorkerExtensions(
 	paths: readonly string[],
 	cwd: string,
-	engine: EngineId,
+	_engine: EngineId,
 ): Promise<string[]> {
-	if (paths.length && engine !== "pi") {
-		throw new Error("--extension is supported only for Pi workers; use --engine pi");
-	}
 	const selected: string[] = [];
 	for (const input of paths) {
 		if (
