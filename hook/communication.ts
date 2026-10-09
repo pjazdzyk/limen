@@ -143,6 +143,11 @@ export default function limenCommunication(pi: PiApi): void {
 	});
 }
 
+/** What this hook gives a job, for an engine that cannot load it (claude): system-prompt text and the first cue. */
+export function jobGuidance(root: string): { readonly system: string; readonly cue: string } {
+	return { system: guidancePrompt(root, true), cue: turnCue(root, true, false, undefined, undefined) };
+}
+
 function isWakePrompt(prompt: string | undefined): boolean {
 	return typeof prompt === "string" && prompt.startsWith("Limen job ");
 }
