@@ -43,7 +43,8 @@ test("each spawn refusal exits 1, names its cause and leaves no job, worktree or
 	const refusals: ReadonlyArray<readonly [readonly string[], string, Record<string, string>?]> = [
 		[[`Implement F002. Ticket: ${draft}`], draft],
 		[["--role", "coordinator", "work"], "coordinator"],
-		[["--engine", "claude", "work"], "--engine"],
+		[["--engine", "nope", "work"], "--engine"],
+		[["--engine", "claude", "--provider", "openai", "work"], "--provider"],
 		[["--engine", "pi", "work"], "PATH", { PATH: "/usr/bin:/bin" }],
 		[["--engine", "pi", "--extension", "npm:package", "work"], "npm:package"],
 		[["--engine", "pi", "--extension", "missing.ts", "work"], "missing.ts"],
