@@ -35,6 +35,9 @@ export async function initCommand(args: readonly string[], cwd: string): Promise
 			"init requires a Git repository; run 'git init' first, or use 'limen workspace init' for a non-Git workspace",
 		);
 	}
+	if (workspaceRoot(cwd)) {
+		throw new Error("this directory is a Limen workspace; use 'limen workspace init'");
+	}
 	const root = repoRoot(cwd);
 	for (const legacy of [
 		".control",
@@ -60,10 +63,15 @@ export async function workspaceCommand(args: readonly string[], cwd: string): Pr
 	if (args.length !== 1 || args[0] !== "init") {
 		throw new Error("workspace requires init");
 	}
-	if (isGitRepository(cwd)) {
-		throw new Error("workspace init requires a non-Git parent directory");
+	const root = resolve(cwd);
+	const aggregating = isGitRepository(root);
+	if (aggregating && resolve(repoRoot(root)) !== root) {
+		throw new Error("workspace init requires a non-Git parent directory or the top level of an aggregating repository");
 	}
-	await initialize(resolve(cwd), false);
+	await initialize(root, false);
+	if (aggregating) {
+		await ensureIgnored(`${root}/.gitignore`);
+	}
 }
 async function initialize(root: string, repository: boolean): Promise<void> {
 	const copies = [
