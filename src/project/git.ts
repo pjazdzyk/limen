@@ -15,9 +15,20 @@ export function repoRoot(cwd: string): string {
 	}
 	return result.stdout.trim();
 }
+/**
+ * A workspace is a directory with `.agents/limen` that is either not a Git repository, or is the top level
+ * of one that also holds `spec/workspace.md` (only `workspace init` writes that file). The second form is an
+ * aggregating repository: it versions the shared spec and agent files and `.gitignore`s its child repositories.
+ */
 export function workspaceRoot(cwd: string): string | undefined {
 	const root = resolve(cwd);
-	return existsSync(`${root}/.agents/limen`) && !isGitRepository(root) ? root : undefined;
+	if (!existsSync(`${root}/.agents/limen`)) {
+		return undefined;
+	}
+	if (!isGitRepository(root)) {
+		return root;
+	}
+	return existsSync(`${root}/spec/workspace.md`) && resolve(repoRoot(root)) === root ? root : undefined;
 }
 export function limenRoot(cwd: string): string {
 	if (process.env.LIMEN_GROUP_ID) {

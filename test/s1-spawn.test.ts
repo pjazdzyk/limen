@@ -173,3 +173,23 @@ test("a workspace OMP job loads a selected extension after the Limen hooks", asy
 	);
 	assert.equal(loaded.at(-1), await realpath(extension));
 });
+
+test("an aggregating Git workspace that ignores its child repositories still runs one job per child", async () => {
+	const workspace = join(p.parent, "workspace-aggregating");
+	await repository(workspace);
+	await writeFile(join(workspace, ".gitignore"), "api/\n");
+	git(workspace, "add", ".gitignore");
+	git(workspace, "commit", "-q", "-m", "ignore children");
+	await repository(join(workspace, "api"));
+	assert.equal(limen(p, ["workspace", "init"], { cwd: workspace }).status, 0);
+	assert.match(readFileSync(join(workspace, ".gitignore"), "utf8"), /^\/?\.limen\/$/m);
+	assert.match(limen(p, ["init"], { cwd: workspace }).stderr, /is a Limen workspace/);
+	const id = spawnJob(p, "commit", ["--repo", "api"], { cwd: workspace });
+	assert.equal(waitJob(p, id, { cwd: workspace }), "done");
+	assert.equal(readFileSync(join(workspace, ".limen/jobs", id, "repo"), "utf8"), "api\n");
+	assert.equal(git(join(workspace, "api"), "rev-list", "--count", `main..limen/${id}`), "1");
+	assert.equal(git(workspace, "branch", "--list", `limen/${id}`), "");
+	const ticket = limen(p, ["ticket", "new", "workspace tickets work"], { cwd: workspace });
+	assert.equal(ticket.status, 0, ticket.stderr);
+	assert.ok(existsSync(join(workspace, "spec/features/planned")), ticket.stdout);
+});
