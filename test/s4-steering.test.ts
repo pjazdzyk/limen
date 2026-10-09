@@ -23,6 +23,7 @@ import {
 
 const PACKAGE = fileURLToPath(new URL("..", import.meta.url));
 const FLAGS = ["--engine", "pi", "--detached"];
+const CLAUDE = ["--engine", "claude", "--model", "haiku", "--detached"];
 // One marker per project guidance source; the package capability frame and its cue are read from their own file.
 const STYLE = "style-marker-s4";
 const REGISTER = "register-marker-s4";
@@ -95,25 +96,35 @@ test("a second init removes old hook copies, so a coordinator gets each guidance
 	assert.deepEqual(readdirSync(join(p.root, ".omp/extensions")), ["limen.ts"]);
 });
 
+// Pi and OMP take steers through the steering hook; claude on stdin, by default with only Bash pre-approved.
 test("a running worker gets each steer once and in order; an ended one refuses a late steer and writes nothing", async () => {
-	parent = spawnJob(p, "block", [...FLAGS, "--extension", first, "--priority", "3"]);
-	const dir = jobDir(p, parent);
-	await until(dir, () => existsSync(join(dir, "fake-blocked-1")));
-	for (const [index, text] of ["one", "two"].entries()) {
-		assert.equal(limen(p, ["steer", parent, text]).status, 0);
-		// The hook has taken the file: a delivery (right or wrong) arrived, or the inbox emptied without one.
-		await until(dir, () => steers(dir).length > index || readdirSync(join(dir, "steer/inbox")).length === 0);
+	for (const flags of [[...FLAGS, "--extension", first, "--priority", "3"], CLAUDE]) {
+		const id = spawnJob(p, "tool npm test\nblock\nsay fixed", flags);
+		parent ||= id;
+		const dir = jobDir(p, id);
+		await until(dir, () => existsSync(join(dir, "fake-blocked-1")));
+		for (const [index, text] of ["one", "two"].entries()) {
+			const steered = limen(p, ["steer", id, text]);
+			assert.equal(steered.status, 0, steered.stderr);
+			// The hook has taken the file: a delivery (right or wrong) arrived, or the inbox emptied without one.
+			await until(dir, () => steers(dir).length > index || readdirSync(join(dir, "steer/inbox")).length === 0);
+		}
+		await release(dir);
+		assert.equal(waitJob(p, id), "done");
+		// The engine has exited, so every delivery it will ever get is recorded; each asks to log a change in the note.
+		const note = new RegExp(`\\n\\n\\[limen\\] If this steer changes .* in \\S+/jobs/${id}/note\\.md\\. .*$`);
+		assert.deepEqual(
+			steers(dir).map((text) => text?.replace(note, " +note")),
+			["one +note", "two +note"],
+		);
+		assert.deepEqual([jobFile(p, id, "tool-calls"), jobFile(p, id, "result")], ["1", "fixed"]);
+		const before = readdirSync(join(dir, "steer"), { recursive: true }).sort();
+		const late = limen(p, ["steer", id, "late"]);
+		assert.equal(late.status, 1);
+		assert.deepEqual(readdirSync(join(dir, "steer"), { recursive: true }).sort(), before);
+		assert.equal(jobFile(p, id, "state"), "done");
+		assert.ok(flags !== CLAUDE || argv(id).join(" ").includes("--permission-mode acceptEdits --allowedTools=Bash "));
 	}
-	await release(dir);
-	assert.equal(waitJob(p, parent), "done");
-	// The engine has exited, so every delivery it will ever get is recorded; each asks to log a change in the note.
-	const note = new RegExp(`\\n\\n\\[limen\\] If this steer changes .* in \\S+/jobs/${parent}/note\\.md\\. .*$`);
-	const delivered = steers(dir).map((text) => text?.replace(note, " +note"));
-	assert.deepEqual(delivered, ["one +note", "two +note"]);
-	const before = readdirSync(join(dir, "steer"), { recursive: true }).sort();
-	const late = limen(p, ["steer", parent, "late"]);
-	assert.equal(late.status, 1);
-	assert.deepEqual(readdirSync(join(dir, "steer"), { recursive: true }).sort(), before);
 });
 
 test("a worker prompt carries register and styleguide once, vision and board pointers, and no board body", () => {

@@ -40,17 +40,8 @@ export default function limenSteering(pi: PiApi): void {
 		jobDir = undefined;
 	};
 	const sweep = () => {
-		if (!jobDir) {
-			return;
-		}
-		try {
-			for (const name of pendingNames(jobDir)) {
-				if (!deliver(pi, jobDir, name)) {
-					break;
-				}
-			}
-		} catch {
-			// Delivery is advisory; inbox files remain until a later sweep.
+		if (jobDir) {
+			sweepSteers(jobDir, (text) => pi.sendUserMessage(text, { deliverAs: "steer" }));
 		}
 	};
 	const scheduleSweep = () => {
@@ -104,7 +95,23 @@ export default function limenSteering(pi: PiApi): void {
 	pi.on("session_shutdown", stop);
 }
 
-function deliver(pi: PiApi, job: string, name: string): boolean {
+/** Delivers every pending steer in order through `send`, for an engine that cannot load this hook (claude). */
+export function sweepSteers(job: string, send: (text: string) => void): number {
+	let sent = 0;
+	try {
+		for (const name of pendingNames(job)) {
+			if (!deliver(send, job, name)) {
+				break;
+			}
+			sent += 1;
+		}
+	} catch {
+		// Delivery is advisory; inbox files remain until a later sweep.
+	}
+	return sent;
+}
+
+function deliver(send: (text: string) => void, job: string, name: string): boolean {
 	const inbox = join(job, "steer", "inbox", name);
 	const claim = join(job, "steer", "claims", name);
 	const delivered = join(job, "steer", "delivered", name);
@@ -127,7 +134,7 @@ function deliver(pi: PiApi, job: string, name: string): boolean {
 		return false;
 	}
 	try {
-		pi.sendUserMessage(`${text}\n\n${noteSteer(job)}`, { deliverAs: "steer" });
+		send(`${text}\n\n${noteSteer(job)}`);
 		writeFileSync(join(claim, "accepted"), "1\n");
 		renameSync(claim, delivered);
 		rmSync(inbox, { force: true });

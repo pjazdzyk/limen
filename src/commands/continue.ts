@@ -33,6 +33,7 @@ import {
 	recordedPlanningSource,
 	ticketPointers,
 } from "../project/planning.ts";
+import { checkClaudeFlags } from "../runtime/claude.ts";
 import {
 	defaultModel,
 	type EngineId,
@@ -48,6 +49,7 @@ import { parseFlags } from "./flags.ts";
 import {
 	capturedVersions,
 	currentNotificationSession,
+	detachedOnly,
 	herdrWakePane,
 	normalizeLabel,
 	resolvePreamble,
@@ -178,12 +180,15 @@ type Continuation = {
 	readonly timeoutMs: number | undefined;
 };
 /** True for a Herdr pane, false for a detached wrapper. Only --tab hosts; a group member without a mode flag keeps Herdr's pane. */
-function chooseHostedContinue(options: ContinueOptions, grouped: boolean): boolean {
+function chooseHostedContinue(options: ContinueOptions, profile: EngineProfile, grouped: boolean): boolean {
 	const herdr = herdrAvailable();
-	const hosted = options.detached ? false : options.tab || (grouped && herdr);
 	if (options.tab && !herdr) {
 		throw new Error("hosted continue requires Herdr (HERDR_ENV=1); use --detached for an ordinary job");
 	}
+	if (detachedOnly(profile, options.tab, options.detached, herdr)) {
+		return false;
+	}
+	const hosted = options.detached ? false : options.tab || (grouped && herdr);
 	if (hosted && options.timeoutMs) {
 		throw new Error("hosted jobs have no timeout; omit --timeout or use --detached");
 	}
@@ -192,14 +197,12 @@ function chooseHostedContinue(options: ContinueOptions, grouped: boolean): boole
 async function continueJob(args: readonly string[], cwd: string, locked = false, round?: number): Promise<void> {
 	const options = parseContinueArgs(args);
 	const { review, label, model, provider, thinking } = options;
-	const chosenModel = model ?? defaultModel(review);
 
 	// A job that continues from its own worktree resolves jobs in its canonical root.
 	const inherited = workspaceRoot(cwd) ? undefined : inheritedPlanning(repoRoot(cwd));
 	const root = inherited?.root ?? (await commandRoot(cwd));
 	const { id: parentId, jobDir: parentDir } = await resolveJob(root, options.query, "control");
 	const membership = await jobMembership(parentDir);
-	const hosted = chooseHostedContinue(options, membership !== undefined);
 	if (membership) {
 		await checkGroupContinuation(membership, cwd, options, round);
 		if (!locked) {
@@ -209,7 +212,12 @@ async function continueJob(args: readonly string[], cwd: string, locked = false,
 	}
 	const parent = await readParentJob(root, parentId, parentDir, membership, options.engine);
 	const profile = engineProfile(parent.engine);
+	const hosted = chooseHostedContinue(options, profile, membership !== undefined);
+	const chosenModel = model ?? defaultModel(review, profile.id);
 	const extensions = await continuationExtensions(parentDir, membership, options.selected, cwd, profile.id);
+	if (profile.id === "claude") {
+		checkClaudeFlags({ model: chosenModel, provider, thinking, extensions });
+	}
 	preflightEngine(profile, chosenModel, provider);
 	const source = recordedPlanningSource(parentDir);
 	const followUp = await continuationTask(root, parentDir, options.instruction, source);
