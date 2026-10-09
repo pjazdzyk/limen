@@ -2,9 +2,9 @@
 // from an allowlist, the scripted fake engine (test/fake-engine.mjs) as `pi` and `omp`, and a fetch sink that records
 // every request a Limen process makes. Scenarios wait on `limen wait`, file events and FIFOs; nothing here sleeps.
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, readFileSync, watch } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, watch } from "node:fs";
 import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -49,9 +49,24 @@ sources:
 ---
 `;
 
+/**
+ * Where plants live. Linux /tmp is world-writable (1777), and the GitHub poller rightly refuses a key file below a
+ * directory others can write, so the doorbell scenario cannot pass there. Use a private base under HOME instead.
+ * macOS gives each user a private tmpdir, which is used as before.
+ */
+function plantBase(): string {
+	const system = tmpdir();
+	if ((statSync(system).mode & 0o022) === 0) {
+		return system;
+	}
+	const base = join(homedir(), ".cache", "limen-test");
+	mkdirSync(base, { recursive: true, mode: 0o700 });
+	return base;
+}
+
 /** A fresh plant. `root` is the real path: macOS tmpdir is a /var symlink and Git reports /private/var. */
 export async function plant(): Promise<Plant> {
-	const parent = await realpath(await mkdtemp(join(tmpdir(), "limen-plant-")));
+	const parent = await realpath(await mkdtemp(join(plantBase(), "limen-plant-")));
 	const root = join(parent, "repo");
 	const bin = join(parent, "bin");
 	await Promise.all([mkdir(bin), mkdir(join(parent, "home"))]);
@@ -60,7 +75,7 @@ export async function plant(): Promise<Plant> {
 	const env = {
 		PATH: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin:/usr/sbin:/sbin`,
 		HOME: join(parent, "home"),
-		TMPDIR: tmpdir(),
+		TMPDIR: plantBase(),
 		LIMEN_HOME: parent,
 		LIMEN_HERDR: "0",
 		LIMEN_HUNK: "0",
