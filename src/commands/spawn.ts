@@ -554,7 +554,7 @@ export async function startHosted(input: {
 				LIMEN_GROUP_ID: group,
 				LIMEN_TEAM_ID: team,
 				HERDR_ENV: "1",
-				PATH: `/usr/bin${process.env.PATH ? `:${process.env.PATH}` : ""}`,
+				PATH: withUsrBin(process.env.PATH),
 			},
 		});
 		const supervisorPid = await launchHostedSupervisor({
@@ -838,6 +838,15 @@ async function lastLimenDetail(jobDir: string): Promise<string> {
 	return close === -1 ? line : line.slice(close + 2);
 }
 const text = async (path: string): Promise<string> => (await readFile(path, "utf8").catch(() => "")).trim();
+/**
+ * A hosted tab must resolve system tools such as git, so /usr/bin has to be on its PATH. Append it when missing;
+ * never move it to the front, or a system Node in /usr/bin (common on Linux) shadows the Node Limen runs on and
+ * the engine cannot load the TypeScript hooks.
+ */
+export function withUsrBin(path: string | undefined): string {
+	const dirs = (path ?? "").split(":").filter(Boolean);
+	return (dirs.includes("/usr/bin") ? dirs : [...dirs, "/usr/bin"]).join(":");
+}
 export async function waitForHandshake(jobDir: string, wrapperPid: number, owner = "detached wrapper"): Promise<void> {
 	const deadline = Date.now() + handshakeMs();
 	while (Date.now() < deadline) {
