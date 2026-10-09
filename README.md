@@ -20,7 +20,7 @@ Experimental software. Commands, prompts, and project files can change.
 ## Requirements
 
 - macOS or Linux, with Node.js 24 or later and Git.
-- [Pi](https://pi.dev), the default engine, or OMP (`--engine omp`), installed and authenticated.
+- [Pi](https://pi.dev), the default engine, OMP (`--engine omp`) or Claude Code (`--engine claude`), installed and authenticated.
 - Herdr is optional for interactive job tabs.
 - A Devin account is optional, for jobs that run as Devin cloud sessions (`--engine devin`).
 
