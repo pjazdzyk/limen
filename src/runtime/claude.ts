@@ -86,8 +86,10 @@ export function claudeArgv(slots: EngineArgv): string[] {
 	if (slots.thinking) {
 		args.push("--effort", slots.thinking);
 	}
-	// Extra Claude Code settings for jobs only (a file path or JSON), such as commit attribution or a sandbox.
-	const settings = process.env.LIMEN_CLAUDE_SETTINGS?.trim();
+	// Settings for jobs only (a file path or JSON). The default switches off the commit and PR attribution lines,
+	// the house style; an explicit empty LIMEN_CLAUDE_SETTINGS leaves Claude Code's own behaviour alone.
+	const configured = process.env.LIMEN_CLAUDE_SETTINGS;
+	const settings = configured === undefined ? '{"attribution":{"commit":"","pr":""}}' : configured.trim();
 	if (settings) {
 		args.push("--settings", settings);
 	}
