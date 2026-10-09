@@ -34,6 +34,7 @@ import {
 	recordedPlanningSource,
 	ticketPointers,
 } from "../project/planning.ts";
+import { checkClaudeFlags } from "../runtime/claude.ts";
 import {
 	defaultModel,
 	type EngineId,
@@ -48,6 +49,7 @@ import { parseFlags } from "./flags.ts";
 import {
 	capturedVersions,
 	currentNotificationSession,
+	detachedOnly,
 	herdrWakePane,
 	normalizeLabel,
 	resolvePreamble,
@@ -170,11 +172,9 @@ async function continueJob(args: readonly string[], cwd: string, locked = false)
 	const options = parseContinueArgs(args);
 	const { review, tab, detached, label, model, provider, thinking } = options;
 	const herdr = herdrAvailable();
-	const hosted = detached ? false : tab || herdr;
 	if (tab && !herdr) {
 		throw new Error("hosted continue requires Herdr (HERDR_ENV=1); use --detached for an ordinary job");
 	}
-	const chosenModel = model ?? defaultModel(review);
 
 	// A job that continues from its own worktree resolves jobs in its canonical root.
 	const inherited = workspaceRoot(cwd) ? undefined : inheritedPlanning(repoRoot(cwd));
@@ -190,7 +190,12 @@ async function continueJob(args: readonly string[], cwd: string, locked = false)
 	}
 	const parent = await readParentJob(root, parentId, parentDir, membership, options.engine);
 	const profile = engineProfile(parent.engine);
+	const hosted = detachedOnly(profile, tab, detached, herdr) ? false : detached ? false : tab || herdr;
+	const chosenModel = model ?? defaultModel(review, profile.id);
 	const extensions = await continuationExtensions(parentDir, membership, options.selected, cwd, profile.id);
+	if (profile.id === "claude") {
+		checkClaudeFlags({ model: chosenModel, provider, thinking, extensions });
+	}
 	preflightEngine(profile, chosenModel, provider);
 	const source = recordedPlanningSource(parentDir);
 	const followUp = await continuationTask(root, parentDir, options.instruction, source, membership);

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// The one fake pi/omp. It loads the real hook extensions Limen passes, runs the task text as a script, and records
+// The one fake pi/omp/claude. It loads the hook extensions Limen passes, runs the task text as a script, and records
 // what it saw in the record dir (the parent of --session-dir, so a job's own dir). Script lines:
 //   commit · fail <code> · error (assistant stop reason "error") · say <text> · tool <command> · block · orphan · finish <handoff>
 //   · /<command> <args> (runs a command a hook registered, as a user typing it)
@@ -9,6 +9,7 @@
 import { execFileSync, spawn } from "node:child_process";
 import { appendFileSync, createReadStream, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { createInterface } from "node:readline";
 
 const args = process.argv.slice(2);
 if (args[0] === "--version") {
@@ -18,27 +19,33 @@ if (args[0] === "config") {
 	process.exit(console.log(JSON.stringify({ value: [] })) ?? 0);
 }
 const flag = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
-const dir = dirname(flag("--session-dir") ?? join(process.cwd(), "session"));
+// As claude: task and steers arrive as stdin lines, events leave as stream-json, and exit waits for stdin's end.
+const claude = args.includes("--input-format") ? createInterface({ input: process.stdin }) : undefined;
+const closed = claude && new Promise((resolve) => claude.once("close", resolve));
+const jobs = join(process.env.LIMEN_CONTEXT_ROOT ?? "", ".limen/jobs", process.env.LIMEN_JOB_ID ?? "");
+const dir = claude ? jobs : dirname(flag("--session-dir") ?? join(process.cwd(), "session"));
 const prompt = args.find((value) => value.startsWith("@"));
-const task = prompt ? readFileSync(prompt.slice(1), "utf8") : (flag("--continue") ?? "");
+const line = async () => JSON.parse(await new Promise((resolve) => claude.once("line", resolve))).message.content;
+const task = claude ? await line() : prompt ? readFileSync(prompt.slice(1), "utf8") : (flag("--continue") ?? "");
 const preamble = flag("--append-system-prompt") ?? "";
 mkdirSync(dir, { recursive: true });
 writeFileSync(join(dir, "fake-argv.json"), JSON.stringify(args));
-writeFileSync(
-	join(dir, "fake-env.json"),
-	JSON.stringify(
-		Object.keys(process.env)
-			.filter((name) => /^(LIMEN|HERDR|PI)_/.test(name))
-			.sort(),
-	),
-);
+const names = Object.keys(process.env).filter((name) => /^(LIMEN|HERDR|PI)_/.test(name));
+writeFileSync(join(dir, "fake-env.json"), JSON.stringify(names.sort()));
 writeFileSync(join(dir, "fake-task.txt"), task);
 if (flag("--session-dir")) {
 	mkdirSync(flag("--session-dir"), { recursive: true });
 	appendFileSync(join(flag("--session-dir"), "fake.jsonl"), `${JSON.stringify({ task })}\n`);
 }
 const record = (entry) => appendFileSync(join(dir, "fake-events.jsonl"), `${JSON.stringify(entry)}\n`);
-const emit = (event) => console.log(JSON.stringify(event));
+claude?.on("line", (text) => record({ event: "steer", text: JSON.parse(text).message.content }));
+const asClaude = ({ type, toolName: name, args: input, message: { stopReason, content } = {} }) =>
+	({
+		tool_execution_start: { type: "assistant", message: { content: [{ type: "tool_use", name, input }] } },
+		tool_execution_end: { type: "user", message: { content: [{ type: "tool_result" }] } },
+		message_end: { type: "result", is_error: stopReason === "error", result: content?.[0].text },
+	})[type];
+const emit = (event) => console.log(JSON.stringify((claude && asClaude(event)) ?? event));
 
 const handlers = new Map();
 const tools = new Map();
@@ -170,5 +177,6 @@ for (const line of task.split("\n")) {
 turns = turns.then(() => turn([{ role: "user", content: [{ type: "text", text: task }] }], reply, stopReason));
 await turns;
 await fire("session_shutdown", {});
+await closed;
 record({ event: "exit", code, shutdown });
 process.exit(code);

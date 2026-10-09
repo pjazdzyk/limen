@@ -3,11 +3,12 @@ import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { mkdir, readdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
+import { claudeArgv, preflightClaude } from "./claude.ts";
 
-export type EngineId = "pi" | "omp";
+export type EngineId = "pi" | "omp" | "claude";
 export type EngineProfile = {
 	readonly id: EngineId;
-	readonly binaryEnv: "LIMEN_PI" | "LIMEN_OMP";
+	readonly binaryEnv: "LIMEN_PI" | "LIMEN_OMP" | "LIMEN_CLAUDE";
 	readonly binaryDefault: EngineId;
 	readonly herdrKind: EngineId;
 	readonly projectTrust: boolean;
@@ -28,6 +29,8 @@ export type EngineArgv = {
 	readonly thinking?: string;
 	readonly continueValue?: string;
 	readonly taskFile?: string;
+	/** Claude only: the session id to start, or to resume when `continueValue` is set. */
+	readonly session?: string;
 };
 export const ENGINES: { readonly [K in EngineId]: EngineProfile } = {
 	pi: {
@@ -52,19 +55,32 @@ export const ENGINES: { readonly [K in EngineId]: EngineProfile } = {
 		noTitle: true,
 		authCheck: false,
 	},
+	// The official, unmodified Claude Code binary in print mode. It authenticates itself; see runtime/claude.ts.
+	claude: {
+		id: "claude",
+		binaryEnv: "LIMEN_CLAUDE",
+		binaryDefault: "claude",
+		herdrKind: "claude",
+		projectTrust: false,
+		toolYolo: false,
+		sessionName: false,
+		noTitle: false,
+		authCheck: false,
+	},
 };
+const isEngineId = (id: string): id is EngineId => id === "pi" || id === "omp" || id === "claude";
 export function engineProfile(id: string): EngineProfile {
-	if (id === "pi" || id === "omp") {
+	if (isEngineId(id)) {
 		return ENGINES[id];
 	}
 	throw new Error(`unknown engine ${id}`);
 }
 export function resolveSpawnEngine(flag?: string): EngineProfile {
 	const raw = (flag ?? process.env.LIMEN_ENGINE)?.trim() || "omp";
-	if (raw === "pi" || raw === "omp") {
+	if (isEngineId(raw)) {
 		return ENGINES[raw];
 	}
-	throw new Error("--engine must be pi or omp");
+	throw new Error("--engine must be pi, omp or claude");
 }
 export function engineBinary(profile: EngineProfile): string {
 	return process.env[profile.binaryEnv] ?? profile.binaryDefault;
@@ -72,8 +88,12 @@ export function engineBinary(profile: EngineProfile): string {
 export async function jobProfile(jobDir: string): Promise<EngineProfile> {
 	return engineProfile((await readFile(`${jobDir}/engine`, "utf8").catch(() => "pi")).trim() || "pi");
 }
-// Package fallback when neither --model nor the role's environment variable names a model.
-export function defaultModel(review: boolean): string {
+// Package fallback when neither --model nor the role's environment variable names a model. Claude Code takes
+// its own model names, so a claude job reads LIMEN_CLAUDE_MODEL instead and falls back to the `sonnet` alias.
+export function defaultModel(review: boolean, engine: EngineId = "omp"): string {
+	if (engine === "claude") {
+		return process.env.LIMEN_CLAUDE_MODEL?.trim() || "sonnet";
+	}
 	return process.env[review ? "LIMEN_REVIEWER_MODEL" : "LIMEN_WORKER_MODEL"]?.trim() || "openai-codex/gpt-6-astra:high";
 }
 export function preflightEngine(profile: EngineProfile, model?: string, provider?: string): void {
@@ -81,6 +101,10 @@ export function preflightEngine(profile: EngineProfile, model?: string, provider
 		throw new Error(
 			`${profile.binaryDefault} is not on PATH; install it, or pass --engine ${profile.id === "omp" ? "pi" : "omp"}`,
 		);
+	}
+	if (profile.id === "claude") {
+		preflightClaude(engineBinary(profile));
+		return;
 	}
 	if (!profile.authCheck || process.env.LIMEN_PREFLIGHT !== "auth") {
 		return;
@@ -198,6 +222,9 @@ export async function prepareSkillConfig(worktree: string, jobDir: string): Prom
 }
 
 export function argvFor(profile: EngineProfile, slots: EngineArgv): string[] {
+	if (profile.id === "claude") {
+		return claudeArgv(slots);
+	}
 	const args: string[] = [];
 	if (slots.jsonMode) {
 		args.push("--mode", "json");

@@ -33,6 +33,7 @@ import {
 	privatePlanningTask,
 	ticketPointers,
 } from "../project/planning.ts";
+import { checkClaudeFlags } from "../runtime/claude.ts";
 import { signalProcessGroup, waitForProcessGroup } from "../runtime/contain.ts";
 import {
 	defaultModel,
@@ -161,16 +162,19 @@ type SpawnedJob = {
 async function spawnJob(args: readonly string[], cwd: string, group?: SpawnGroup): Promise<void> {
 	const parsed = parseSpawnArgs(args);
 	await checkLaunchAuthority(parsed, group);
-	const hosted = chooseHostedLaunch(parsed);
+	const profile = resolveSpawnEngine(parsed.engine);
+	const hosted = chooseHostedLaunch(parsed, profile);
 	const loaded = await readSpawnTask(parsed.task, parsed.taskFile, cwd);
 	const options = {
 		...parsed,
 		task: loaded.text,
 		label: parsed.label ?? (loaded.text.trim().split(/\r?\n/, 1)[0]?.trim().slice(0, 80) || "job"),
 	};
-	const profile = resolveSpawnEngine(options.engine);
-	const model = options.model ?? defaultModel(options.review);
+	const model = options.model ?? defaultModel(options.review, profile.id);
 	const extensions = await launchExtensions(group, options.extensions, cwd, profile.id);
+	if (profile.id === "claude") {
+		checkClaudeFlags({ model, provider: options.provider, thinking: options.thinking, extensions });
+	}
 	preflightEngine(profile, model, options.provider);
 	const notificationSession = currentNotificationSession();
 	const coordinatorTab = process.env.HERDR_TAB_ID?.trim();
@@ -236,12 +240,15 @@ async function checkLaunchAuthority(parsed: SpawnOptions, group: SpawnGroup | un
 	}
 }
 /** True for a Herdr pane, false for a detached wrapper. */
-function chooseHostedLaunch(parsed: SpawnOptions): boolean {
+function chooseHostedLaunch(parsed: SpawnOptions, profile: EngineProfile): boolean {
 	const herdr = herdrAvailable();
-	const hosted = parsed.detached ? false : parsed.tab || herdr;
 	if (parsed.tab && parsed.detached) {
 		throw new Error("--tab and --detached cannot be combined");
 	}
+	if (detachedOnly(profile, parsed.tab, parsed.detached, herdr)) {
+		return false;
+	}
+	const hosted = parsed.detached ? false : parsed.tab || herdr;
 	if (hosted && parsed.timeoutMs) {
 		throw new Error("hosted jobs have no timeout; omit --timeout or use --detached");
 	}
@@ -638,6 +645,22 @@ function executeWorktree(root: string, plan: WorktreePlan): string {
 		addNewWorktree(root, plan.path, plan.branch);
 	}
 	return plan.path;
+}
+/**
+ * Claude runs only as a detached print-mode job: a hosted tab would need Limen's hooks inside the engine. In Herdr
+ * it still gets the log-tail tab every detached job gets. True when the engine forces detached.
+ */
+export function detachedOnly(profile: EngineProfile, tab: boolean, detached: boolean, herdr: boolean): boolean {
+	if (profile.id !== "claude") {
+		return false;
+	}
+	if (tab) {
+		throw new Error("--engine claude runs detached only; omit --tab");
+	}
+	if (herdr && !detached) {
+		console.log("note: claude jobs run detached; Herdr shows the job log in a tab");
+	}
+	return true;
 }
 function claimsOwnerFacingLead(role: string | undefined): string | undefined {
 	if (role === "coordinator" || role === "lead") {

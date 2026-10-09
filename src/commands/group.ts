@@ -260,6 +260,9 @@ function groupSettings({ flags, teamModels, mode }: GroupStartOptions): GroupSet
 	const timeout = parseDuration(groupSetting(flags, "--timeout"));
 	const workerTimeoutMs = parseDuration(groupSetting(flags, "--worker-timeout"));
 	const profile = resolveSpawnEngine(groupSetting(flags, "--engine"));
+	if (profile.id === "claude") {
+		throw new Error("groups need Limen's group hook inside each engine; claude cannot load it, use --engine omp or pi");
+	}
 	const provider = groupSetting(flags, "--provider");
 	const model = groupSetting(flags, "--model");
 	const thinking = groupSetting(flags, "--thinking");
