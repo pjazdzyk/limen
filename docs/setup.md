@@ -8,7 +8,7 @@ Install Limen, define the project, and ask an agent to do the work.
 
 - **Operating system:** macOS or Linux. Limen does not support Windows.
 - **Tools:** Node.js 24 or later, and Git.
-- **Engine:** Pi (`pi`, the default) or OMP (`omp`) on `PATH`.
+- **Engine:** Pi (`pi`, the default), OMP (`omp`) or Claude Code (`claude`) on `PATH`.
 - **Last known-good versions:** pi 1.2.0, omp 18.4.4 and Herdr 0.9.1. Limen records the versions on each job, but it does not refuse other versions.
 
 ## Install
@@ -101,9 +101,9 @@ Project choices are in `spec/build.md`. The board records the engine, provider, 
 
 The coordinator must pass the board choices explicitly. Package fallbacks apply when command flags and environment variables do not select a setting.
 
-**Engine.** `--engine pi|omp|devin` selects the job's agent: the Pi or OMP binary on the seat, or a Devin cloud session (see [Devin cloud jobs](#devin-cloud-jobs)). The order of priority is:
+**Engine.** `--engine pi|omp|devin|claude` selects the job's agent: the Pi or OMP binary on the seat, or a Devin cloud session (see [Devin cloud jobs](#devin-cloud-jobs)). The order of priority is:
 
-1. `--engine pi|omp|devin`
+1. `--engine pi|omp|devin|claude`
 2. `LIMEN_ENGINE` (for example, `LIMEN_ENGINE=omp` selects OMP)
 3. Pi, for new jobs, when neither is set
 
@@ -122,7 +122,22 @@ A Devin job takes only `--model`: it names a Devin mode, and without it the orga
 
 **`pi-claude` on both engines.** A `pi-claude` model runs on the Claude Code bridge, which Limen names with `--extension`, because jobs otherwise start with `--no-extensions`. Pi loads the `pi-claude-bridge` package that `pi install` put under `~/.pi/agent/npm/node_modules` (scoped or not), and takes `--provider pi-claude --model claude-opus-5-5` or `--model pi-claude/claude-opus-5-5` as given. OMP loads the local bridge at `~/.omp/local/pi-claude-bridge` and has no `pi-claude` provider: a command that requires `--provider` takes `--provider pi-claude`, and Limen keeps it in the job record and off the OMP command line, so `--provider pi-claude --model claude-opus-5-5` means `--model pi-claude/claude-opus-5-5`. `spawn`, `continue` and `group start` refuse a missing bridge before any job exists. On OMP they also refuse a `pi-claude` provider with another provider's model. With `LIMEN_PREFLIGHT=auth`, a bridged route skips `pi auth check`, because the bridge signs in through Claude Code.
 
-**Auth.** Pi and OMP keep separate auth stores (`~/.pi` and `~/.omp`). Authenticate each engine you use. Limen does not change the settings or credentials of either engine. One wrapper and one stream parser serve both engines.
+**Auth.** Pi and OMP keep separate auth stores (`~/.pi` and `~/.omp`). Authenticate each engine you use. Limen does not change the settings or credentials of either engine. One wrapper and one stream parser serve every engine.
+
+### The `claude` engine
+
+`--engine claude` runs the official, unmodified Claude Code binary (`claude -p`) as a detached job in the job's worktree. Log in once with `claude` yourself; the binary authenticates itself. Limen never reads, copies, stores or passes a Claude credential, sets no `ANTHROPIC_*` variable, and its preflight runs only `claude --version`. `LIMEN_CLAUDE` names another binary path.
+
+```bash
+limen spawn --engine claude --model sonnet --detached "instruction"
+```
+
+- **Model.** `--model` takes a Claude Code alias or model name (`haiku`, `sonnet`, `opus`). Without it, a claude job reads `LIMEN_CLAUDE_MODEL`, then uses `sonnet`; `LIMEN_WORKER_MODEL` and `LIMEN_REVIEWER_MODEL` name OMP models and do not apply.
+- **Reasoning.** `--thinking` takes `low`, `medium`, `high`, `xhigh` or `max` and reaches claude as `--effort`.
+- **Refused.** `--provider` (other than `anthropic`, which keeps `limen keeper` routes valid), `--extension`, `--tab` and `limen group start --engine claude`. Claude cannot load Limen's hooks, and a hosted tab and a group need them.
+- **Permissions.** Nobody answers a prompt in a detached job, so Limen passes `--permission-prompts none`: whatever would ask is denied. By default it also passes `--permission-mode acceptEdits`, which approves file edits inside the worktree only, and `--allowedTools=Bash`, so the worker can run checks and commit. No bypass is on by default. `LIMEN_CLAUDE_PERMISSION_MODE` (`acceptEdits`, `auto`, `dontAsk`, `plan` or `bypassPermissions`) and `LIMEN_CLAUDE_ALLOWED_TOOLS` (comma-separated, for example `Bash(npm *),Bash(git *)`; empty for none) override them. `bypassPermissions` is the blanket bypass: set it only for a worktree on a machine you would let any command run on. Pre-approved `Bash` can still write outside the worktree; narrow it with `LIMEN_CLAUDE_ALLOWED_TOOLS` when that matters. The job log records the mode and tools it ran with.
+- **Same as OMP.** The job record, `limen wait`, `jobs`, `stop`, timeout, tool-call cap, stalled-tool detection, review mode, `land` and the Herdr log tab. `limen steer` writes the steer inbox as for any job; the wrapper sends each steer to claude as a stream-json user message, which claude takes between tool calls. `limen continue` resumes the parent's Claude Code session (`--resume`) in the same worktree. The stream is copied into `session/<session-id>.jsonl`.
+- **Different from OMP.** Claude runs detached only: in Herdr a spawn without `--detached` falls back to detached with a note, and there is no hosted tab. The communication hook's guidance (register, styleguide, ticket, vision and board pointers) goes in once, with the system prompt and the first message, instead of every turn; its reminders after tool results are not given. Old `.pi/skills` are not offered; Claude Code reads its own skills and the worktree's `CLAUDE.md`.
 
 ### Personal model routes and Pi extensions
 
