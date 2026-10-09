@@ -86,6 +86,11 @@ export function claudeArgv(slots: EngineArgv): string[] {
 	if (slots.thinking) {
 		args.push("--effort", slots.thinking);
 	}
+	// Extra Claude Code settings for jobs only (a file path or JSON), such as commit attribution or a sandbox.
+	const settings = process.env.LIMEN_CLAUDE_SETTINGS?.trim();
+	if (settings) {
+		args.push("--settings", settings);
+	}
 	return args;
 }
 
