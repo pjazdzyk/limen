@@ -105,7 +105,11 @@ function teamRouteFlag(value: string): TeamRoute {
 	if (!route?.[1] || !route[2] || !route[3] || !route[4] || !LEVELS.includes(route[4])) {
 		throw new Error(`${INVALID_TEAM}; the reasoning level is one of ${LEVELS.join(", ")}`);
 	}
-	return { engine: resolveSpawnEngine(route[1]).id, provider: route[2], model: route[3], thinking: route[4] };
+	const engine = resolveSpawnEngine(route[1]).id;
+	if (engine === "claude") {
+		throw new Error("groups need Limen's group hook inside each engine; claude cannot load it, use engine omp or pi");
+	}
+	return { engine, provider: route[2], model: route[3], thinking: route[4] };
 }
 function teamExtensionPaths(values: readonly string[]): Record<string, string[]> {
 	const paths: Record<string, string[]> = {};
@@ -305,16 +309,13 @@ async function teamExtensionPathsByTeam(
 	cwd: string,
 ): Promise<Record<string, string[]>> {
 	const teamExtensions: Record<string, string[]> = {};
-	const selected = options.extensions.length || Object.values(options.teamSelections).some((paths) => paths.length);
-	if (selected && settings.profile.id !== "pi") {
-		throw new Error("--extension is supported only for Pi workers; use --engine pi");
-	}
 	for (const team of settings.teams) {
-		teamExtensions[team] = await normalizeWorkerExtensions(
-			[...options.extensions, ...(options.teamSelections[team] ?? [])],
-			cwd,
-			resolveSpawnEngine(settings.routes[team]?.engine).id,
-		);
+		const selected = [...options.extensions, ...(options.teamSelections[team] ?? [])];
+		const engine = resolveSpawnEngine(settings.routes[team]?.engine).id;
+		if (selected.length && engine !== "pi") {
+			throw new Error("--extension is supported only for Pi workers in a group; use engine pi for that team");
+		}
+		teamExtensions[team] = await normalizeWorkerExtensions(selected, cwd, engine);
 	}
 	return teamExtensions;
 }

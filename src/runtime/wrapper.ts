@@ -11,6 +11,7 @@ import {
 	writeHandshake,
 } from "../job/record.ts";
 import { enqueueSteer } from "../job/steer-inbox.ts";
+import { claudeLaunch, claudePermissions, driveClaude } from "./claude.ts";
 import {
 	containEscapedDescendants,
 	discoverEscapedDescendants,
@@ -132,12 +133,23 @@ export async function runInternalJob(): Promise<void> {
 	};
 	const profile = await jobProfile(jobDir);
 	const skillConfig = profile.id === "omp" ? await prepareSkillConfig(worktree, jobDir) : undefined;
+	const claude =
+		profile.id === "claude"
+			? await claudeLaunch({
+					jobDir,
+					root: process.env.LIMEN_CONTEXT_ROOT || worktree,
+					taskFile,
+					preamble,
+					resume: process.env.LIMEN_CONTINUE === "1",
+				})
+			: undefined;
 	const args = argvFor(profile, {
 		jsonMode: true,
 		jobDir,
 		...(skillConfig ? { skillConfig } : {}),
+		...(claude ? { session: claude.session } : {}),
 		label,
-		preamble,
+		preamble: claude?.preamble ?? preamble,
 		extensions: [
 			`${HOOK}/finish.ts`,
 			`${HOOK}/steering.ts`,
@@ -163,13 +175,16 @@ export async function runInternalJob(): Promise<void> {
 	for (const name of privateEnvironment.split(" ")) {
 		delete childEnvironment[name];
 	}
-	// A detached job must not inherit the coordinator's Herdr pane.
+	// A detached job must not inherit the coordinator's Herdr pane, nor its Claude Code session: that session's id,
+	// messaging socket and token belong to the coordinator, not the job. Claude settings and login stay untouched.
+	const callerClaude =
+		/^(CLAUDECODE|CLAUDE_PID|CLAUDE_EFFORT|CLAUDE_CODE_(ENTRYPOINT|EXECPATH|SSE_PORT|CHILD_SESSION|SESSION_\w+|MESSAGING_\w+))$/;
 	for (const name of Object.keys(childEnvironment)) {
-		if (name.startsWith("HERDR_")) {
+		if (name.startsWith("HERDR_") || callerClaude.test(name)) {
 			delete childEnvironment[name];
 		}
 	}
-	const parser = createStreamParser();
+	const parser = createStreamParser(profile.id);
 	const seen = { activity: "", activityAt: 0, assistant: "", stop: "", tool: "", progress: 0 };
 	const failLog = (error: unknown) =>
 		appendLimenLog(jobDir, `log write failed: ${error instanceof Error ? error.message : String(error)}`).catch(
@@ -195,10 +210,18 @@ export async function runInternalJob(): Promise<void> {
 	};
 	const child = spawn(engineBinary(profile), args, {
 		cwd: worktree,
-		stdio: ["ignore", "pipe", "pipe"],
+		stdio: [claude ? "pipe" : "ignore", "pipe", "pipe"],
 		env: childEnvironment,
 	});
-	child.stdout?.on("data", (chunk: Buffer | string) => apply(parser.push(chunk.toString())));
+	const driver = claude && child.stdin ? driveClaude(child.stdin, jobDir, claude.session, claude.message) : undefined;
+	child.stdout?.on("data", (chunk: Buffer | string) => {
+		driver?.tee(chunk.toString());
+		const events = parser.push(chunk.toString());
+		apply(events);
+		if (events.some((event) => event.kind === "assistant" && event.settled)) {
+			driver?.settled();
+		}
+	});
 	child.stderr?.on("data", (chunk: Buffer | string) => {
 		seen.progress += 1;
 		pending = pending.then(() => appendFile(`${jobDir}/log`, chunk.toString())).catch(failLog);
@@ -214,6 +237,10 @@ export async function runInternalJob(): Promise<void> {
 	await writeHandshake(jobDir);
 	await atomicWrite(`${jobDir}/state`, "running\n");
 	await appendLimenLog(jobDir, "worker started");
+	if (claude) {
+		const { mode, tools } = claudePermissions();
+		await appendLimenLog(jobDir, `claude permission mode ${mode}; pre-approved tools: ${tools.join(", ") || "none"}`);
+	}
 	const enginePid = child.pid;
 	const stallWatch: ToolStallWatch = { tool: "", born: "", started: 0 };
 	let observing = false;
@@ -313,6 +340,7 @@ export async function runInternalJob(): Promise<void> {
 		void enqueueSteer(jobDir, text).catch(failLog);
 	}, steerAt);
 	const result = await outcome;
+	driver?.close();
 	clearTimeout(timeout);
 	clearTimeout(deadlineSteer);
 	clearInterval(stallTimer);
@@ -375,9 +403,10 @@ async function recordEvents(
 				await appendFile(`${jobDir}/log`, `${event.name}\n`);
 			}
 		} else if (event.kind === "assistant") {
+			const repeated = event.settled && event.text === seen.assistant;
 			seen.assistant = event.text;
 			seen.stop = event.stopReason ?? "";
-			if (event.text) {
+			if (event.text && !repeated) {
 				await appendFile(`${jobDir}/log`, `${event.text}\n`);
 			}
 		} else {
