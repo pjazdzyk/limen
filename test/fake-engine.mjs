@@ -39,11 +39,14 @@ if (flag("--session-dir")) {
 }
 const record = (entry) => appendFileSync(join(dir, "fake-events.jsonl"), `${JSON.stringify(entry)}\n`);
 claude?.on("line", (text) => record({ event: "steer", text: JSON.parse(text).message.content }));
+const cached = { cache_read_input_tokens: 100, cache_creation_input_tokens: 1000 };
+const usage = (output_tokens) => ({ input_tokens: 1, output_tokens, ...cached });
+const said = (content) => ({ id: JSON.stringify(content), model: "claude-haiku-9", usage: usage(1), content });
 const asClaude = ({ type, toolName: name, args: input, message: { stopReason, content } = {} }) =>
 	({
-		tool_execution_start: { type: "assistant", message: { content: [{ type: "tool_use", name, input }] } },
+		tool_execution_start: { type: "assistant", message: said([{ type: "tool_use", name, input }]) },
 		tool_execution_end: { type: "user", message: { content: [{ type: "tool_result" }] } },
-		message_end: { type: "result", is_error: stopReason === "error", result: content?.[0].text },
+		message_end: { type: "result", is_error: stopReason === "error", result: content?.[0].text, usage: usage(10) },
 	})[type];
 const emit = (event) => console.log(JSON.stringify((claude && asClaude(event)) ?? event));
 
