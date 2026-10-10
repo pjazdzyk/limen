@@ -7,6 +7,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { chmod, mkdir, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
+import { withUsrBin } from "../src/commands/spawn.ts";
 import { jobDir, jobFile, LIMEN, limen, type Plant, plant, release, spawnJob, until, waitJob } from "./plant.ts";
 
 const herdrSource = `#!/usr/bin/env node
@@ -241,4 +242,6 @@ test("hosted Pi gets literal launch flags and the selected extension; stop recor
 	assert.equal(named("tab", "create").length, 3, "one tab per hosted job");
 	assert.equal(named("workspace", "create").length, 1, "one role space");
 	assert.equal(prompts(first), 1, "still one wake prompt for the first job");
+	const paths = ["/opt/node/bin:/usr/bin:/bin", "/opt/node/bin:/bin", undefined, ""].map(withUsrBin);
+	assert.deepEqual(paths, ["/opt/node/bin:/usr/bin:/bin", "/opt/node/bin:/bin:/usr/bin", "/usr/bin", "/usr/bin"]);
 });

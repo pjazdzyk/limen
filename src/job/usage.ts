@@ -28,8 +28,8 @@ export function readSessionUsage(jobDir: string, since: number): SessionUsage | 
 	const served = new Set<string>();
 	const totals = { turns: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 	for (const file of files) {
-		for (const line of readFileSync(join(session, file), "utf8").split("\n")) {
-			const turn = assistantTurn(line, since);
+		const lines = readFileSync(join(session, file), "utf8").split("\n");
+		for (const turn of [...lines.map((line) => assistantTurn(line, since)), ...claudeTurns(lines, since)]) {
 			if (!turn) {
 				continue;
 			}
@@ -52,7 +52,10 @@ export function modelLine(requested: string, usage: SessionUsage | undefined): s
 		return requested ? `requested ${requested}; no turn yet` : "";
 	}
 	const served = usage.served.join(" + ");
-	if (!requested || usage.served.every((route) => route === requested || route.endsWith(`/${requested}`))) {
+	// A Claude Code alias (`haiku`) matches the model it resolves to (`anthropic/claude-haiku-5-5`).
+	const asked = (route: string) =>
+		route === requested || route.endsWith(`/${requested}`) || route.includes(`/claude-${requested}-`);
+	if (!requested || usage.served.every(asked)) {
 		return served;
 	}
 	return `served ${served} · requested ${requested}`;
@@ -100,5 +103,55 @@ function assistantTurn(line: string, since: number): Turn | undefined {
 			cacheRead: number("cacheRead"),
 			cacheWrite: number("cacheWrite"),
 		},
+	};
+}
+
+/**
+ * The turns of a `claude` job's Claude Code stream-json transcript. Each content block repeats its message's usage
+ * with a partial output count; the `result` that ends a turn carries the turn's exact usage, so it goes on the
+ * turn's last message. Messages after the last result (a cut turn) keep their streamed usage.
+ */
+function claudeTurns(lines: readonly string[], since: number): Turn[] {
+	const turns: Turn[] = [];
+	let open = new Map<string, Turn>();
+	for (const line of lines) {
+		const event = claudeEvent(line);
+		const message = (event?.message ?? {}) as { id?: unknown; model?: unknown; usage?: unknown };
+		const own = typeof event?.timestamp !== "string" || Date.parse(event.timestamp) >= since;
+		if (event?.type === "assistant" && own && typeof message.id === "string" && typeof message.model === "string") {
+			if (message.model !== "<synthetic>") {
+				open.set(message.id, { provider: "anthropic", model: message.model, usage: claudeCounts(message.usage) });
+			}
+		} else if (event?.type === "result" && open.size) {
+			const ended = [...open.values()].map((turn) => ({ ...turn, usage: claudeCounts(undefined) }));
+			ended.splice(-1, 1, { ...(ended.at(-1) as Turn), usage: claudeCounts(event.usage) });
+			turns.push(...ended);
+			open = new Map();
+		}
+	}
+	return [...turns, ...open.values()];
+}
+
+function claudeEvent(
+	line: string,
+): { type?: unknown; timestamp?: unknown; message?: unknown; usage?: unknown } | undefined {
+	if (!(line.includes('"type":"assistant"') || line.includes('"type":"result"'))) {
+		return undefined;
+	}
+	try {
+		return JSON.parse(line) ?? undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+function claudeCounts(usage: unknown): Turn["usage"] {
+	const counts = (usage ?? {}) as Record<string, unknown>;
+	const number = (key: string) => (typeof counts[key] === "number" ? (counts[key] as number) : 0);
+	return {
+		input: number("input_tokens"),
+		output: number("output_tokens"),
+		cacheRead: number("cache_read_input_tokens"),
+		cacheWrite: number("cache_creation_input_tokens"),
 	};
 }
