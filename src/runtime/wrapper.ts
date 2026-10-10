@@ -146,6 +146,15 @@ export async function runInternalJob(): Promise<void> {
 		LIMEN_JOB_ID: jobId,
 		LIMEN_JOB_LABEL: label,
 	};
+	// Langfuse tracing (the langfuse-observability plugin reads this tag list): make a job findable by id and ticket.
+	if (profile.id === "claude" && !childEnvironment.CC_LANGFUSE_TRACE_TAGS) {
+		const ticket = /\bF\d{3}\b/.exec(label)?.[0];
+		childEnvironment.CC_LANGFUSE_TRACE_TAGS = JSON.stringify([
+			"limen",
+			`job:${jobId}`,
+			...(ticket ? [`ticket:${ticket}`] : []),
+		]);
+	}
 	const privateEnvironment =
 		"LIMEN_INTERNAL_RUN LIMEN_JOB_DIR LIMEN_WORKTREE LIMEN_TASK_FILE LIMEN_PREAMBLE LIMEN_TIMEOUT_MS LIMEN_MODEL LIMEN_PROVIDER LIMEN_THINKING LIMEN_LABEL PI_SESSION_ID PI_SESSION_FILE PI_PROVIDER PI_MODEL PI_REASONING_LEVEL";
 	for (const name of privateEnvironment.split(" ")) {
