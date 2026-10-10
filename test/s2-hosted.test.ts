@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { withUsrBin } from "../src/commands/spawn.ts";
 import { FINAL, jobDir, jobFile, LIMEN, limen, type Plant, plant, release, spawnJob, until, waitJob } from "./plant.ts";
 
 const WAKE = fileURLToPath(new URL("../hook/wake.ts", import.meta.url));
@@ -254,4 +255,9 @@ test("hosted Pi stop records stopped once and closes the job's tab", async () =>
 	assert.equal(jobFile(p, third, "log").match(/\] stopped: enough/g)?.length, 1);
 	const made = [named("tab", "create").length, named("workspace", "create").length];
 	assert.deepEqual(made, [3, 1], "one tab per job, one role space");
+});
+
+test("a spawned engine keeps the caller's PATH order and gains /usr/bin only when it is missing", () => {
+	const paths = ["/opt/node/bin:/usr/bin:/bin", "/opt/node/bin:/bin", undefined, ""].map(withUsrBin);
+	assert.deepEqual(paths, ["/opt/node/bin:/usr/bin:/bin", "/opt/node/bin:/bin:/usr/bin", "/usr/bin", "/usr/bin"]);
 });
