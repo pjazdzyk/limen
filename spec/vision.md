@@ -10,7 +10,7 @@
 - Harness mechanisms inform and preserve judgment; no hidden workflow gate.
 - Judgment travels as prose. Wanted behavior comes from the shop manual, the register, the vision, and the styleguide riding the prompt and being recalled at the moment of use; new machinery only where prose cannot reach.
 - Reversible local operations; small dependency-free implementation; inspectable recovery.
-- The test folder `test/` holds at most 3,500 lines. Only Adam changes this number.
+- The test folder `test/` holds at most 4,000 lines. Only Adam changes this number; this clone raised it from 3,500 for its local patches (the claude engine and the aggregating root carry their own tests).
 - Notifications reach subscribed coordinators without creating unsolicited ownership.
 - Every reply is read cold by an owner whose clock stopped at their last message: an identifier travels with its meaning, and the reply is as big as the question.
 - Herdr is the visible layout for jobs when it is running; job files and Git remain the source of truth. Each role keeps its own space and the coordinator's holds only the human conversation. A closed tab can be reopened. A tab is not the job.
