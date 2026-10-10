@@ -24,6 +24,8 @@ import {
 const PACKAGE = fileURLToPath(new URL("..", import.meta.url));
 const FLAGS = ["--engine", "pi", "--detached"];
 const CLAUDE = ["--engine", "claude", "--model", "haiku", "--detached"];
+const CLAUDE_SHOWN =
+	/--permission-mode acceptEdits --allowedTools=Bash .*model anthropic\/claude-haiku-9\n.*tokens 1 turns · input 1 · output 10 · cache read 100 · cache write 1,000/s;
 // One marker per project guidance source; the package capability frame and its cue are read from their own file.
 const STYLE = "style-marker-s4";
 const REGISTER = "register-marker-s4";
@@ -95,7 +97,6 @@ test("a second init removes old hook copies, so a coordinator gets each guidance
 	assert.deepEqual(readdirSync(join(p.root, ".omp/extensions")), ["limen.ts"]);
 });
 
-// Pi and OMP take steers through the steering hook; claude on stdin, by default with only Bash pre-approved.
 test("a running worker gets each steer once and in order; an ended one refuses a late steer and writes nothing", async () => {
 	for (const flags of [[...FLAGS, "--extension", first], CLAUDE]) {
 		const id = spawnJob(p, "tool npm test\nblock\nsay fixed", flags);
@@ -118,7 +119,7 @@ test("a running worker gets each steer once and in order; an ended one refuses a
 		assert.equal(late.status, 1);
 		assert.deepEqual(readdirSync(join(dir, "steer"), { recursive: true }).sort(), before);
 		assert.equal(jobFile(p, id, "state"), "done");
-		assert.ok(flags !== CLAUDE || argv(id).join(" ").includes("--permission-mode acceptEdits --allowedTools=Bash "));
+		assert.ok(flags !== CLAUDE || CLAUDE_SHOWN.test(`${argv(id).join(" ")}\n${limen(p, ["jobs", id]).stdout}`));
 	}
 });
 
