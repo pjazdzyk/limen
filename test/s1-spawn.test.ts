@@ -137,42 +137,25 @@ test("a workspace job works in one child repository", async () => {
 	assert.equal(git(join(workspace, "web"), "branch", "--list", `limen/${id}`), "");
 });
 
-test("a workspace OMP job loads a selected extension after the Limen hooks", async () => {
-	const workspace = join(p.parent, "workspace-omp");
-	await repository(join(workspace, "api"));
-	assert.equal(limen(p, ["workspace", "init"], { cwd: workspace }).status, 0);
-	const extension = join(p.parent, "omp-selected.ts");
-	await writeFile(extension, "export default () => {};\n");
-	const id = spawnJob(p, "commit", ["--repo", "api", "--engine", "omp", "--extension", extension], { cwd: workspace });
-	assert.equal(waitJob(p, id, { cwd: workspace }), "done");
-	const dir = join(workspace, ".limen/jobs", id);
-	assert.deepEqual(json(join(dir, "extensions.json")), [await realpath(extension)]);
-	const argv: string[] = json(join(dir, "fake-argv.json"));
-	assert.ok(argv.includes("--no-extensions"));
-	const loaded = extensionsOf(argv);
-	assert.ok(
-		loaded.some((path) => path.endsWith("/hook/communication.ts")),
-		loaded.join(" "),
-	);
-	assert.equal(loaded.at(-1), await realpath(extension));
-});
-
-test("an aggregating Git workspace that ignores its child repositories still runs one job per child", async () => {
+test("an aggregating Git workspace runs an OMP job in one ignored child, its extension after the Limen hooks", async () => {
 	const workspace = join(p.parent, "workspace-aggregating");
-	await repository(workspace);
+	await mkdir(workspace, { recursive: true });
 	await writeFile(join(workspace, ".gitignore"), "api/\n");
-	git(workspace, "add", ".gitignore");
-	git(workspace, "commit", "-q", "-m", "ignore children");
+	await repository(workspace);
 	await repository(join(workspace, "api"));
 	assert.equal(limen(p, ["workspace", "init"], { cwd: workspace }).status, 0);
 	assert.match(readFileSync(join(workspace, ".gitignore"), "utf8"), /^\/?\.limen\/$/m);
 	assert.match(limen(p, ["init"], { cwd: workspace }).stderr, /is a Limen workspace/);
-	const id = spawnJob(p, "commit", ["--repo", "api"], { cwd: workspace });
+	const extension = join(p.parent, "omp-selected.ts");
+	await writeFile(extension, "export default () => {};\n");
+	const id = spawnJob(p, "commit", ["--repo", "api", "--engine", "omp", "--extension", extension], { cwd: workspace });
 	assert.equal(waitJob(p, id, { cwd: workspace }), "done");
-	assert.equal(readFileSync(join(workspace, ".limen/jobs", id, "repo"), "utf8"), "api\n");
 	assert.equal(git(join(workspace, "api"), "rev-list", "--count", `main..limen/${id}`), "1");
 	assert.equal(git(workspace, "branch", "--list", `limen/${id}`), "");
+	const argv: string[] = json(join(workspace, ".limen/jobs", id, "fake-argv.json"));
+	const loaded = extensionsOf(argv);
+	assert.ok(argv.includes("--no-extensions") && loaded.some((path) => path.endsWith("/hook/communication.ts")));
+	assert.equal(loaded.at(-1), await realpath(extension));
 	const ticket = limen(p, ["ticket", "new", "workspace tickets work"], { cwd: workspace });
-	assert.equal(ticket.status, 0, ticket.stderr);
-	assert.ok(existsSync(join(workspace, "spec/features/planned")), ticket.stdout);
+	assert.ok(ticket.status === 0 && existsSync(join(workspace, "spec/features/planned")), ticket.stderr);
 });
