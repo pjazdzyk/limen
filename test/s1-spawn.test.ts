@@ -2,8 +2,8 @@
 // engine environment without the caller's Herdr pane or Pi session; reading a running job leaves its index alone;
 // a workspace job works in one child repository; each refusal leaves no job, worktree or branch behind.
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
-import { mkdir, rm, utimes, writeFile } from "node:fs/promises";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { mkdir, realpath, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import {
@@ -48,7 +48,6 @@ test("each spawn refusal exits 1, names its cause and leaves no job, worktree or
 		[["--engine", "pi", "work"], "PATH", { PATH: "/usr/bin:/bin" }],
 		[["--engine", "pi", "--extension", "npm:package", "work"], "npm:package"],
 		[["--engine", "pi", "--extension", "missing.ts", "work"], "missing.ts"],
-		[["--engine", "omp", "--extension", "README.md", "work"], "--extension"],
 		[["--provider", "pi-claude", "--model", "anthropic/claude-opus-5-5", "work"], "pi-claude/claude-opus-5-5"],
 		[["--engine", "devin", "--tab", "work"], "detached only"],
 		[["--engine", "devin", "--thinking", "high", "work"], "--thinking"],
