@@ -2,8 +2,8 @@
 // engine environment without the caller's Herdr pane or Pi session; reading a running job leaves its index alone;
 // a workspace job works in one child repository; each refusal leaves no job, worktree or branch behind.
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
-import { mkdir, rm, utimes, writeFile } from "node:fs/promises";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { mkdir, realpath, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import {

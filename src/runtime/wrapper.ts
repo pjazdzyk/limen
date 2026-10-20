@@ -427,6 +427,19 @@ export async function failInternalJob(error: unknown): Promise<void> {
 	}
 	await finalizeJob(jobDir, "failed", error instanceof Error ? error.message : String(error));
 }
+/** A settled message that repeats the streamed text is not logged twice. */
+async function recordAssistant(
+	jobDir: string,
+	event: Extract<StreamEvent, { kind: "assistant" }>,
+	seen: { assistant: string; stop: string },
+): Promise<void> {
+	const repeated = event.settled && event.text === seen.assistant;
+	seen.assistant = event.text;
+	seen.stop = event.stopReason ?? "";
+	if (event.text && !repeated) {
+		await appendFile(`${jobDir}/log`, `${event.text}\n`);
+	}
+}
 async function recordEvents(
 	jobDir: string,
 	events: readonly StreamEvent[],
@@ -453,12 +466,7 @@ async function recordEvents(
 				await appendFile(`${jobDir}/log`, `${event.name}\n`);
 			}
 		} else if (event.kind === "assistant") {
-			const repeated = event.settled && event.text === seen.assistant;
-			seen.assistant = event.text;
-			seen.stop = event.stopReason ?? "";
-			if (event.text && !repeated) {
-				await appendFile(`${jobDir}/log`, `${event.text}\n`);
-			}
+			await recordAssistant(jobDir, event, seen);
 		} else {
 			seen.progress += 1;
 			await appendFile(`${jobDir}/log`, `${event.line}\n`);
