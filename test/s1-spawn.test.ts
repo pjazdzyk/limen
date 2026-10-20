@@ -3,7 +3,7 @@
 // a workspace job works in one child repository; each refusal leaves no job, worktree or branch behind.
 import assert from "node:assert/strict";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { mkdir, realpath, rm, symlink, utimes, writeFile } from "node:fs/promises";
+import { mkdir, realpath, rm, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import {
@@ -27,6 +27,8 @@ before(async () => {
 after(() => p.cleanup());
 
 const json = (path: string) => JSON.parse(readFileSync(path, "utf8"));
+const extensionsOf = (argv: readonly string[]) =>
+	argv.flatMap((value, index) => (value === "--extension" ? [argv[index + 1] ?? ""] : []));
 // What a half-made job would leave: a job dir, a worktree, a branch.
 const traces = () => [
 	readdirSync(join(p.root, ".limen/jobs")),
@@ -153,4 +155,11 @@ test("an aggregating Git workspace runs an OMP job in one ignored child, its ext
 	assert.equal(loaded.at(-1), await realpath(extension));
 	const ticket = limen(p, ["ticket", "new", "workspace tickets work"], { cwd: workspace });
 	assert.ok(ticket.status === 0 && existsSync(join(workspace, "spec/features/planned")), ticket.stderr);
+});
+
+test("the continue usage line lists the engines continue accepts, as docs/commands.md does", () => {
+	const usage = (text: string) => /limen continue .*?--engine (pi\|omp\|claude)\]/.exec(text)?.[1];
+	assert.equal(usage(limen(p, ["--help"]).stdout + limen(p, ["--help"]).stderr), "pi|omp|claude");
+	assert.equal(usage(readFileSync(join(import.meta.dirname, "../docs/commands.md"), "utf8")), "pi|omp|claude");
+	assert.match(limen(p, ["spawn", "--engine", "nope", "work"]).stderr, /pi, omp, devin or claude/);
 });
