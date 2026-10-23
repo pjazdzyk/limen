@@ -119,7 +119,7 @@ test("a running worker gets each steer once and in order; an ended one refuses a
 		const check = seen.splice(2);
 		assert.deepEqual(seen, ["one +note", "two +note"]);
 		assert.equal(check.length, flags === CLAUDE ? 1 : 0);
-		assert.ok(flags !== CLAUDE || /^\[limen\] You wrote no note in \S+\/note\.md\..*Note check/s.test(check[0] ?? ""));
+		assert.ok(flags !== CLAUDE || /^\[limen\] No note exists in \S+\/note\.md\..*Note check/s.test(check[0] ?? ""));
 		assert.ok(
 			flags !== CLAUDE || readFileSync(join(dir, "fake-task.txt"), "utf8").includes(`${dir}/note.md, or write it`),
 		);
