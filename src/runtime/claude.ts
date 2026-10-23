@@ -81,6 +81,8 @@ export function claudeArgv(slots: EngineArgv): string[] {
 	if (tools.length) {
 		args.push(`--allowedTools=${tools.join(",")}`);
 	}
+	// The job folder sits outside the worktree: without it the worker cannot write its task note.
+	args.push("--add-dir", slots.jobDir);
 	args.push("--append-system-prompt", slots.preamble);
 	if (slots.model) {
 		args.push("--model", slots.model);
