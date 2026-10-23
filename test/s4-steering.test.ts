@@ -130,6 +130,8 @@ test("a running worker gets each steer once and in order; an ended one refuses a
 		assert.deepEqual(readdirSync(join(dir, "steer"), { recursive: true }).sort(), before);
 		assert.equal(jobFile(p, id, "state"), "done");
 		assert.ok(flags !== CLAUDE || CLAUDE_SHOWN.test(`${argv(id).join(" ")}\n${limen(p, ["jobs", id]).stdout}`));
+		// The job folder lies outside the worktree, so claude is given it to write the task note.
+		assert.ok(flags !== CLAUDE || argv(id).join(" ").includes(` --add-dir ${dir} `));
 	}
 });
 
