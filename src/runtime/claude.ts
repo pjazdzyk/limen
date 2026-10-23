@@ -8,6 +8,8 @@ import { readdir, readFile } from "node:fs/promises";
 import type { Writable } from "node:stream";
 import { jobGuidance } from "../../hook/communication.ts";
 import { sweepSteers } from "../../hook/steering.ts";
+import { noteCheck, noteStart, recordNote } from "../job/task-note.ts";
+import { readOptional } from "../project/inherit.ts";
 import type { EngineArgv } from "./engine.ts";
 
 const EFFORT = ["low", "medium", "high", "xhigh", "max"];
@@ -127,7 +129,7 @@ export async function claudeLaunch(input: {
 	return {
 		session: await claudeSession(input.jobDir, input.resume),
 		preamble: guidance.system ? `${input.preamble}\n\n${guidance.system}` : input.preamble,
-		message: `${guidance.cue}\n\n${task}`,
+		message: `${guidance.cue}\n\n${noteStart(input.jobDir)}\n\n${task}`,
 	};
 }
 
@@ -154,7 +156,13 @@ export function driveClaude(stdin: Writable, jobDir: string, session: string, ta
 	send(task);
 	let open = true;
 	let buffer = "";
-	const sweep = () => (open ? sweepSteers(jobDir, send) : 0);
+	// The task note: the hook that does this for Pi and OMP cannot load in claude, so the driver keeps the copy and the log.
+	let noteSeen = readOptional(`${jobDir}/note.md`);
+	let checked = false;
+	const sweep = () => {
+		noteSeen = recordNote(jobDir, noteSeen);
+		return open ? sweepSteers(jobDir, send) : 0;
+	};
 	writeFileSync(`${jobDir}/steer/ready`, "1\n");
 	let watcher: FSWatcher | undefined;
 	try {
@@ -187,9 +195,17 @@ export function driveClaude(stdin: Writable, jobDir: string, session: string, ta
 			}
 		},
 		settled() {
-			if (!sweep()) {
-				close();
+			if (sweep()) {
+				return;
 			}
+			if (!checked && open) {
+				// Once, before the end: the same note check the finish hook sends to Pi and OMP jobs.
+				checked = true;
+				appendFileSync(`${jobDir}/log`, `[limen ${new Date().toISOString()}] note check sent\n`);
+				send(noteCheck(jobDir, false));
+				return;
+			}
+			close();
 		},
 		close,
 	};
