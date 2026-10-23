@@ -38,7 +38,15 @@ if (flag("--session-dir")) {
 	appendFileSync(join(flag("--session-dir"), "fake.jsonl"), `${JSON.stringify({ task })}\n`);
 }
 const record = (entry) => appendFileSync(join(dir, "fake-events.jsonl"), `${JSON.stringify(entry)}\n`);
-claude?.on("line", (text) => record({ event: "steer", text: JSON.parse(text).message.content }));
+let finished = false;
+let reply = "fake engine done";
+// A message that arrives after the first turn starts another one, as claude does; mid-turn ones join the running turn.
+claude?.on("line", (text) => {
+	record({ event: "steer", text: JSON.parse(text).message.content });
+	if (finished) {
+		emit({ type: "message_end", message: { content: [{ type: "text", text: reply }] } });
+	}
+});
 const cached = { cache_read_input_tokens: 100, cache_creation_input_tokens: 1000 };
 const usage = (output_tokens) => ({ input_tokens: 1, output_tokens, ...cached });
 const said = (content) => ({ id: JSON.stringify(content), model: "claude-haiku-9", usage: usage(1), content });
@@ -139,7 +147,6 @@ const started = await fire("before_agent_start", { prompt: task, systemPrompt: p
 writeFileSync(join(dir, "fake-system.txt"), started.map((result) => result?.systemPrompt ?? "").join("\n"));
 writeFileSync(join(dir, "fake-context.txt"), started.map((result) => result?.message?.content ?? "").join("\n"));
 emit({ type: "agent_start" });
-let reply = "fake engine done";
 let stopReason;
 let code = 0;
 for (const line of task.split("\n")) {
@@ -174,6 +181,7 @@ for (const line of task.split("\n")) {
 }
 turns = turns.then(() => turn([{ role: "user", content: [{ type: "text", text: task }] }], reply, stopReason));
 await turns;
+finished = true;
 await fire("session_shutdown", {});
 await closed;
 record({ event: "exit", code });

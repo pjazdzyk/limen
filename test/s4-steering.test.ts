@@ -109,9 +109,14 @@ test("a running worker gets each steer once and in order; an ended one refuses a
 		assert.equal(waitJob(p, id), "done");
 		// The engine has exited, so every delivery it will ever get is recorded; each asks to log a change in the note.
 		const note = new RegExp(`\\n\\n\\[limen\\] If this steer changes .* in \\S+/jobs/${id}/note\\.md: .*$`);
-		assert.deepEqual(
-			steers(dir).map((text) => text?.replace(note, " +note")),
-			["one +note", "two +note"],
+		// Claude cannot load the finish hook, so Limen sends the note check as one more message, once, after the turn.
+		const seen = steers(dir).map((text) => text?.replace(note, " +note"));
+		const check = seen.splice(2);
+		assert.deepEqual(seen, ["one +note", "two +note"]);
+		assert.equal(check.length, flags === CLAUDE ? 1 : 0);
+		assert.ok(flags !== CLAUDE || /^\[limen\] You wrote no note in \S+\/note\.md\..*Note check/s.test(check[0] ?? ""));
+		assert.ok(
+			flags !== CLAUDE || readFileSync(join(dir, "fake-task.txt"), "utf8").includes(`${dir}/note.md, or write it`),
 		);
 		assert.deepEqual([jobFile(p, id, "tool-calls"), jobFile(p, id, "result")], ["1", "fixed"]);
 		const before = readdirSync(join(dir, "steer"), { recursive: true }).sort();
