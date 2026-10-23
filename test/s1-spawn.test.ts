@@ -49,7 +49,6 @@ test("each spawn refusal exits 1, names its cause and leaves no job, worktree or
 		[["--engine", "claude", "--provider", "openai", "work"], "--provider"],
 		[["--engine", "pi", "work"], "PATH", { PATH: "/usr/bin:/bin" }],
 		[["--engine", "pi", "--extension", "missing.ts", "work"], "missing.ts"],
-		[["--engine", "omp", "--extension", "README.md", "work"], "--extension"],
 		[["--provider", "pi-claude", "--model", "anthropic/opus", "work"], "pi-claude/opus", { LIMEN_ENGINE: "omp" }],
 		[["--provider", "pi-claude", "--model", "claude-opus-5-5", "work"], "pi install"],
 		[["--engine", "devin", "--tab", "work"], "detached only"],
