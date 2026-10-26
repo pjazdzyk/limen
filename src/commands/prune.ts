@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 import { readdir, readFile, realpath, rename, rm } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import { retainedGroupJob } from "../job/group-cabinet.ts";
@@ -255,7 +256,10 @@ async function removeUnstartedRecords(
 		const state = await text(`${jobDir}/state`);
 		if (state) {
 			const repo = await text(`${jobDir}/repo`);
-			repositories.add(repo ? workspaceRepository(root, repo) : root);
+			// A record can name a repository that was since removed or renamed: nothing of it is left to prune.
+			if (!repo || existsSync(resolve(root, repo))) {
+				repositories.add(repo ? workspaceRepository(root, repo) : root);
+			}
 			continue;
 		}
 		if (await jobKeeps(jobDir, state)) {

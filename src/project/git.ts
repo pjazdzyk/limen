@@ -403,6 +403,10 @@ function git(cwd: string, args: readonly string[], input?: string): GitResult {
 		gitBin = "git";
 	}
 	if (result.error) {
+		// spawn reports a missing working directory as ENOENT too; name the folder rather than blame git.
+		if (miss(result.error) && !existsSync(resolve(cwd))) {
+			throw new Error(`folder ${resolve(cwd)} does not exist`);
+		}
 		throw miss(result.error) ? new Error("git is not on PATH") : result.error;
 	}
 	return { stdout: result.stdout ?? "", stderr: result.stderr ?? "", status: result.status ?? 1 };
