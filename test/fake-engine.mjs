@@ -41,10 +41,16 @@ const record = (entry) => appendFileSync(join(dir, "fake-events.jsonl"), `${JSON
 let finished = false;
 let reply = "fake engine done";
 // A message that arrives after the first turn starts another one, as claude does; mid-turn ones join the running turn.
+// A message that lands after a turn's result line but before the script ends (the cut line's pauses make this
+// likely) also starts a turn: it is answered once the script ends.
+let resultOut = false;
+let late = 0;
 claude?.on("line", (text) => {
 	record({ event: "steer", text: JSON.parse(text).message.content });
 	if (finished) {
 		emit({ type: "message_end", message: { content: [{ type: "text", text: reply }] } });
+	} else if (resultOut) {
+		late += 1;
 	}
 });
 const cached = { cache_read_input_tokens: 100, cache_creation_input_tokens: 1000 };
@@ -104,6 +110,7 @@ const api = {
 };
 async function turn(messages, reply, stopReason) {
 	idle = false;
+	resultOut = false;
 	for (const message of messages) {
 		await fire("message_start", { message });
 		await fire("message_end", { message });
@@ -113,8 +120,10 @@ async function turn(messages, reply, stopReason) {
 	await fire("context", { messages });
 	const assistant = { role: "assistant", content: [{ type: "text", text: reply }], ...(stopReason && { stopReason }) };
 	// A pipe can cut a line anywhere: cut it inside its first letter of two, three and four bytes; let each piece be read.
-	const line = Buffer.from(`${JSON.stringify({ type: "message_end", message: assistant })}\n`);
+	const event = { type: "message_end", message: assistant };
+	const line = Buffer.from(`${JSON.stringify((claude && asClaude(event)) ?? event)}\n`);
 	const cuts = [0b110, 0b1110, 0b11110].map((lead, n) => line.findIndex((byte) => byte >> (5 - n) === lead) + 1);
+	resultOut = true; // from the first byte of the result line, a new message starts the next turn
 	let start = 0;
 	for (const end of [...cuts.filter((cut) => cut > 0).sort((a, b) => a - b), line.length]) {
 		await new Promise((resolve) => process.stdout.write(line.subarray(start, end), () => setTimeout(resolve, 20)));
@@ -183,6 +192,9 @@ for (const line of task.split("\n")) {
 turns = turns.then(() => turn([{ role: "user", content: [{ type: "text", text: task }] }], reply, stopReason));
 await turns;
 finished = true;
+for (; late > 0; late -= 1) {
+	emit({ type: "message_end", message: { content: [{ type: "text", text: reply }] } });
+}
 await fire("session_shutdown", {});
 await closed;
 record({ event: "exit", code });
