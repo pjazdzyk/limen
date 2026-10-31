@@ -13,11 +13,12 @@ function text(path: string): string {
 	}
 }
 /**
- * How the job ended: stop reason, bounded commits, the whole final message, and undelivered steers. The coordinator
- * decides the next step from this, so the final message is never cut. A part whose file is absent is omitted; that
- * absence is information.
+ * How the job ended: stop reason, bounded commits, the final message, and undelivered steers. The final message is
+ * whole unless `resultChars` bounds it (the coordinator wake under LIMEN_WAKE_RESULT_CHARS): then it is cut at a line
+ * end before that many characters, each commit subject at 160, and the wake names the path to the whole message. A part
+ * whose file is absent is omitted; that absence is information.
  */
-export function jobEnding(job: string): string {
+export function jobEnding(job: string, resultChars?: number): string {
 	const sections: string[] = [];
 	const stop = text(join(job, "stop-reason"));
 	if (stop) {
@@ -28,13 +29,16 @@ export function jobEnding(job: string): string {
 		const lines = commits.split("\n").filter(Boolean);
 		sections.push(
 			lines.length
-				? `Commits:\n${lines.slice(0, 10).join("\n")}${lines.length > 10 ? `\n… ${lines.length - 10} more` : ""}`
+				? `Commits:\n${lines
+						.slice(0, 10)
+						.map((line) => (resultChars && line.length > 160 ? `${line.slice(0, 159)}…` : line))
+						.join("\n")}${lines.length > 10 ? `\n… ${lines.length - 10} more` : ""}`
 				: "Commits: none",
 		);
 	}
 	const result = text(join(job, "result"));
 	if (result) {
-		sections.push(`Final message:\n${result}`);
+		sections.push(`Final message:\n${bounded(result, resultChars, join(job, "result"))}`);
 	}
 	try {
 		const unseen = readdirSync(join(job, "steer", "inbox")).length;
@@ -45,6 +49,20 @@ export function jobEnding(job: string): string {
 		// Inbox may be absent; that is not an undelivered steer.
 	}
 	return sections.join("\n\n");
+}
+/** `result` whole, or cut at the last line end within `chars` with the count left and the file that holds it all. */
+function bounded(result: string, chars: number | undefined, path: string): string {
+	if (!chars || result.length <= chars) {
+		return result;
+	}
+	const cut = result.lastIndexOf("\n", chars);
+	const kept = result.slice(0, cut > chars / 2 ? cut : chars).trimEnd();
+	return `${kept}\n… ${result.length - kept.length} more characters, the whole message in ${path}`;
+}
+/** The coordinator wake's bound on the final message, from LIMEN_WAKE_RESULT_CHARS; undefined keeps it whole. */
+function wakeResultChars(): number | undefined {
+	const chars = Number(process.env.LIMEN_WAKE_RESULT_CHARS);
+	return Number.isInteger(chars) && chars > 0 ? chars : undefined;
 }
 /**
  * How a completion wake travels. `fallback`: a busy coordinator's wake reaches another session. `instruction`: a route's
@@ -109,7 +127,7 @@ export function completionWake(
 		instruction =
 			"The subscribed coordinator is busy. Do not spawn, stop, steer, or land on behalf of another coordinator unless the human asks.";
 	}
-	return joinWake(lead, jobEnding(job), [facts, handoff].filter(Boolean).join("\n\n"), instruction);
+	return joinWake(lead, jobEnding(job, wakeResultChars()), [facts, handoff].filter(Boolean).join("\n\n"), instruction);
 }
 /**
  * The first line of the job's start notice, when the job waited in the start queue and `session` never got that
