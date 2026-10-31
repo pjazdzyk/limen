@@ -31,6 +31,10 @@ export async function promptCoordinator(jobDir: string, shutdownDeadline = Numbe
 }
 /** A job that waited in the start queue tells its pane once that it started: `notify/herdr-start`, never the wake's receipt. */
 export async function promptStartNotice(jobDir: string, message: string): Promise<void> {
+	// LIMEN_START_NOTICE=off: the coordinator hears a job only when it ends; the finish wake names the wait.
+	if (process.env.LIMEN_START_NOTICE === "off") {
+		return;
+	}
 	await promptOriginPane(jobDir, message, START, Number.POSITIVE_INFINITY);
 }
 type PaneRoute = { readonly receipt: string; readonly delivered: string; readonly name: string };

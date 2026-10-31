@@ -53,3 +53,23 @@ test("only a done job that is not a scout is sent to landing; a fallback or scou
 	await promptPane("/usr/bin/true", "w1:p1", wake("done").repeat(130), Date.now() + 60_000, join(dir, "p")); // 1.2 MB
 	assert.match(await readFile(join(dir, "p"), "utf8"), /^attempt 1: not sent to w1:p1: prompt_too_large: \d{7} /);
 });
+
+test("under LIMEN_WAKE_RESULT_CHARS a coordinator wake cuts a long final message at a line end and names the whole one's path; unset keeps it whole", async (t) => {
+	const dir = await mkdtemp(join(tmpdir(), "u12-"));
+	t.after(() => rm(dir, { recursive: true, force: true }));
+	t.after(() => {
+		delete process.env.LIMEN_WAKE_RESULT_CHARS;
+	});
+	const long = Array.from({ length: 80 }, (_, i) => `line ${i} of the final message`).join("\n");
+	await writeFile(join(dir, "task.md"), "Build F001.\n");
+	await writeFile(join(dir, "tool-calls"), "4\n");
+	await writeFile(join(dir, "result"), `${long}\n`);
+	await writeFile(join(dir, "commits"), `abc ${"x".repeat(300)}\n`);
+	const wake = () => completionWake(dir, "F001", "done", "id", "limen/id", "");
+	assert.ok(wake().includes(`Final message:\n${long}\n\n`), "whole when unset");
+	process.env.LIMEN_WAKE_RESULT_CHARS = "500";
+	const cut = wake();
+	assert.match(cut, /line 1[0-9] of the final message\n… \d+ more characters, the whole message in .*result\n/);
+	assert.doesNotMatch(cut, /line 79 of/);
+	assert.match(cut, /Commits:\nabc x{155}…\n/);
+});
