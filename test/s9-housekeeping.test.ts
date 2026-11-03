@@ -1,9 +1,19 @@
 // S9 · sweep, prune and recovery: a dead or finished job is cleaned up, a live one is not. One plant, real bin/limen.
 import assert from "node:assert/strict";
-import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { closeSync, existsSync, openSync, readdirSync, readFileSync, writeSync } from "node:fs";
+import { type ChildProcess, execFileSync, spawn, spawnSync } from "node:child_process";
+import {
+	closeSync,
+	existsSync,
+	lstatSync,
+	mkdirSync,
+	openSync,
+	readdirSync,
+	readFileSync,
+	symlinkSync,
+	writeSync,
+} from "node:fs";
 import { mkdir, utimes, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
@@ -70,11 +80,18 @@ test("spawn returns before --prepare; prune keeps live, nested and starting work
 	await writeFile(join(jobDir(p, gone), "state"), "running\n");
 	git(p.root, "worktree", "add", "-q", "--detach", join(liveTree, "tmp/scratch"), "HEAD"); // the live job's own
 
+	// A link in the worktree root is not a worktree: prune must not follow it and move what it points at.
+	const sibling = join(p.parent, "sibling-checkout");
+	mkdirSync(sibling);
+	const siblingLink = join(dirname(liveTree), "sibling-checkout");
+	symlinkSync(sibling, siblingLink);
 	const pruned = limen(p, ["prune"]);
 	assert.match(pruned.stdout, new RegExp(`pruned .*/${stale} \\(job ${stale}\\): its record never got a state`));
 	for (const dropped of [jobFile(p, landed, "worktree"), jobFile(p, unmerged, "worktree"), jobDir(p, stale)]) {
 		assert.ok(!existsSync(dropped), `prune kept ${dropped}`);
 	}
+	assert.ok(existsSync(sibling), "prune moved the checkout behind a link");
+	assert.ok(lstatSync(siblingLink).isSymbolicLink());
 	const others = [...[starting, gone].map((id) => join(halfTree, "..", id)), join(liveTree, "tmp/scratch")];
 	for (const kept of [liveTree, nestedTree, halfTree, jobDir(p, half), nestedDir, ...others]) {
 		assert.ok(existsSync(kept), `prune removed ${kept}`);
