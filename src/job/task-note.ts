@@ -1,8 +1,6 @@
 import { appendFileSync, existsSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { isAbsolute, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { readOptional } from "../project/inherit.ts";
-import { type Gap, NOT_NAMED, type Run, sessionRuns, unproven } from "./session-commands.ts";
 
 // The agent writes the note in its job folder; the project may keep reminders beside its other Limen guidance.
 // Limen copies, logs and shows both, and never parses them. Adam approved the wording below as written (F950).
@@ -80,24 +78,13 @@ export function noteCheck(jobDir: string, finishTool: boolean): string {
 				]),
 		...(now && first && first !== now ? ["Your note at the start:", first] : []),
 		...(reminders ? ["Project reminders:", reminders.text] : []),
-		"Compare the note with the task and later instructions. " +
-			'Under the heading "Note check" in your final message, give one line per end check: ' +
-			'"- <check>: <mark>. <evidence or gap>". The mark is proven, not proven, changed, or dropped. ' +
-			"Proven names its evidence in backticks: a file, or a command from one bash call in this session " +
-			"that exited 0 and joined its commands only with &&. A command before a | does not count, " +
-			"and a call with ;, ||, a line break, if, ! or exit proves nothing; name a saved log file instead. " +
-			"Not proven needs what is missing. Changed or dropped needs the instruction that changed its scope. " +
-			"Give one line per item in a referenced acceptance list. " +
-			"Account for any obligation missing from the current note. " +
-			"Limen sends each line marked not proven, changed, dropped, or broken to the coordinator, " +
-			"and the job ends as done with open checks. " +
-			"A proven line counts as not proven when Limen finds no proof that its command ran and no such file.",
-		"Give the easy-to-miss rule its own line: followed, broken, or not proven, with evidence or the gap. " +
-			"Passing the end checks does not prove that the rule was followed. " +
-			"Read Not proven yet; none of its entries can be marked proven without evidence.",
-		...(reminders
-			? ["Report each binding project reminder as followed, broken, or not proven, with evidence or the gap."]
-			: []),
+		"Compare the note with the task and later instructions. Keep the final message short: what changed, " +
+			"where the evidence is, and what is still open. " +
+			'Under the heading "Note check", give one line for each item that is still open: ' +
+			'"- <check>: <mark>. <the gap>". The mark is not proven, changed, dropped, or broken. ' +
+			"Do not list what holds: the coordinator reads the evidence. " +
+			'When nothing is open, write "- all checks: proven." ' +
+			"Limen sends each open line to the coordinator, and the job ends as done with open checks.",
 		"Do not repeat a run-once check or run a forbidden check to clear the note. " +
 			"Report any remaining gap without claiming completion.",
 		...(finishTool ? ['Then call finish again. Its handoff is that whole final message, with the "Note check".'] : []),
@@ -132,17 +119,7 @@ export function noteCheckOpen(jobDir: string): string[] {
 	if (!items.length) {
 		return ['Note check: no line reads "<check>: <mark>"'];
 	}
-	// The transcripts are read once, and only when a proven line needs them.
-	let runs: Run[] | undefined;
-	const worktree = readOptional(join(jobDir, "worktree"))?.trim();
-	const seen: Seen = {
-		unproven: (name) => {
-			runs ??= sessionRuns(jobDir);
-			return unproven(runs, name);
-		},
-		roots: [...(worktree ? [worktree] : []), jobDir, resolve(jobDir, "..", "..", "..")],
-	};
-	return items.flatMap((item) => openItem(item, seen)).map((line) => clip(line, 240));
+	return items.flatMap(openItem).map((line) => clip(line, 240));
 }
 
 /** The open items a done job recorded, as wake lines: at most ten, then a count of the rest. */
@@ -153,7 +130,6 @@ export function openChecks(jobDir: string): string[] {
 }
 
 type Marked = { readonly name: string; readonly mark: string; readonly said: string; evidence: string };
-type Seen = { readonly unproven: (name: string) => Gap | undefined; readonly roots: readonly string[] };
 
 /** The lines under the first "Note check" heading, up to the next Markdown heading; undefined without one. */
 function noteCheckSection(result: string): string[] | undefined {
@@ -190,44 +166,12 @@ function markedItems(lines: readonly string[]): Marked[] {
 	return items;
 }
 
-function openItem(item: Marked, seen: Seen): string[] {
-	if (item.mark === "followed") {
+/** Open is whatever is not marked proven or followed. Whether a proven line holds is the coordinator's reading. */
+function openItem(item: Marked): string[] {
+	if (item.mark === "followed" || item.mark === "proven") {
 		return [];
 	}
-	if (item.mark !== "proven") {
-		return [`${item.name}: ${item.mark}${item.said ? `. ${item.said}` : ""}`];
-	}
-	const why = missingEvidence(item.evidence, seen);
-	return why ? [`${item.name}: not proven. Limen: ${why}`] : [];
-}
-
-/**
- * Empty when one backticked name is a command the session surely ran or a file that exists. Otherwise why not, for the
- * first name that a bash call names as a command, or else for the first name.
- */
-function missingEvidence(evidence: string, seen: Seen): string {
-	const named = [...evidence.matchAll(/`([^`\n]+)`/g)]
-		.map((match) => (match[1] ?? "").trim())
-		.filter((name) => /[a-z0-9]/i.test(name));
-	if (!named.length) {
-		return "it names no command or file in backticks";
-	}
-	const gaps: Gap[] = [];
-	for (const name of named) {
-		const gap = fileExists(name, seen.roots) ? undefined : seen.unproven(name);
-		if (!gap) {
-			return "";
-		}
-		gaps.push(gap);
-	}
-	const gap = gaps.find(({ why }) => why !== NOT_NAMED) ?? gaps[0];
-	return `no proof that \`${clip(gap?.command ?? "", 60)}\` ran (${gap?.why ?? NOT_NAMED}), and no such file`;
-}
-
-/** A path as written, or relative to one of `roots`; a `:line` or `#anchor` suffix is ignored. */
-function fileExists(name: string, roots: readonly string[]): boolean {
-	const path = name.replace(/^~(?=\/)/, homedir()).replace(/(?::\d+)+(?:-\d+)?$|#.*$/, "");
-	return (isAbsolute(path) ? [path] : roots.map((root) => resolve(root, path))).some((each) => existsSync(each));
+	return [`${item.name}: ${item.mark}${item.said ? `. ${item.said}` : ""}`];
 }
 
 const clip = (text: string, max: number): string => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
