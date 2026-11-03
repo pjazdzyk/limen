@@ -97,6 +97,11 @@ export function claudeArgv(slots: EngineArgv): string[] {
 	if (settings) {
 		args.push("--settings", settings);
 	}
+	// A job starts with no MCP servers, so it carries no server's instructions it will not use. A job that needs the
+	// user's servers, such as a review probing a live service, sets LIMEN_CLAUDE_KEEP_MCP=1.
+	if (process.env.LIMEN_CLAUDE_KEEP_MCP !== "1") {
+		args.push("--strict-mcp-config");
+	}
 	return args;
 }
 
