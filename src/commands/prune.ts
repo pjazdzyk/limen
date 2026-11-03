@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { readdir, readFile, realpath, rename, rm } from "node:fs/promises";
+import { lstat, readdir, readFile, realpath, rename, rm } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import { retainedGroupJob } from "../job/group-cabinet.ts";
 import { isTerminal } from "../job/job.ts";
@@ -327,8 +327,14 @@ async function removalCandidates(repository: string, worktreeRoot: string): Prom
 		}
 	}
 	for (const name of await readdir(worktreeRoot).catch(() => [])) {
-		const path = await resolved(resolve(worktreeRoot, name));
-		if (!(name.startsWith(".") || registered.has(path))) {
+		// A link is not a worktree. It may point at a primary checkout, and resolving it would move that checkout.
+		const entry = resolve(worktreeRoot, name);
+		const link = await lstat(entry).then(
+			(stats) => stats.isSymbolicLink(),
+			() => true,
+		);
+		const path = await resolved(entry);
+		if (!(link || name.startsWith(".") || registered.has(path)) && path.startsWith(`${worktreeRoot}/`)) {
 			candidates.set(path, false);
 		}
 	}
