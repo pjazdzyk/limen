@@ -11,7 +11,7 @@ import { createInterface } from "node:readline";
 import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { withUsrBin } from "../src/commands/spawn.ts";
-import { FINAL, jobDir, jobFile, LIMEN, limen, type Plant, plant, release, spawnJob, start, until, waitJob } from "./plant.ts";
+import { FINAL, jobDir, jobFile, limen, type Plant, plant, release, spawnJob, start, until, waitJob } from "./plant.ts";
 
 const WAKE = fileURLToPath(new URL("../hook/wake.ts", import.meta.url));
 

@@ -2,7 +2,7 @@
 // from an allowlist, the scripted fake engine (test/fake-engine.mjs) as every engine, and a fetch sink that records
 // every request a Limen process makes. Scenarios wait on `limen wait`, file events and FIFOs; nothing here sleeps.
 import { type ChildProcess, execFileSync, spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, statSync, watch } from "node:fs";
+import { existsSync, readFileSync, statSync, watch } from "node:fs";
 import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";

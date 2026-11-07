@@ -1,6 +1,6 @@
 // S9 · sweep, prune and recovery: a dead or finished job is cleaned up, a live one is not. One plant, real bin/limen.
 import assert from "node:assert/strict";
-import { type ChildProcess, execFileSync, spawn, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import {
 	closeSync,
 	existsSync,
